@@ -97,14 +97,14 @@ func (elf64Ehdr *ELF64Ehdr) VerifyMagic() error {
     return nil
 }
 
-func ParseHeader(elfDump []byte) (ELF64Ehdr, error) {
+func (elf64Ehdr *ELF64Ehdr)Parse(elfDump []byte) error {
     const ELF_64_EHdr_SIZE = 64
 
     if len(elfDump) < ELF_64_EHdr_SIZE {
-        return ELF64Ehdr{}, errors.New("ELF Header size is bigger than the data provided")
+        return errors.New("ELF Header size is bigger than the data provided")
     }
     
-    elf64Ehdr := ELF64Ehdr {
+    *elf64Ehdr = ELF64Ehdr {
         Type: binary.LittleEndian.Uint16(elfDump[0x10:0x12]),
         Machine: binary.LittleEndian.Uint16(elfDump[0x12:0x14]),   
         Version: binary.LittleEndian.Uint32(elfDump[0x14:0x18]),
@@ -122,7 +122,7 @@ func ParseHeader(elfDump []byte) (ELF64Ehdr, error) {
 
     copy(elf64Ehdr.Ident[:], elfDump[0:16])
 
-    return elf64Ehdr, nil
+    return nil
 }
 
 const (
@@ -302,16 +302,23 @@ const (
     PF_MASKPROC = 0xFF000000
 )
 
+type NamedSymbol struct {
+    Sym     *ELF64Sym
+    Name    string
+}
+
 type ELF64 struct {
     Filename string
     File    *os.File
 
     Header ELF64Ehdr
     
-    ShdrEntries [](*ELF64Shdr)
+    // Transform into named map
+    ShdrEntries map[string]*ELF64Shdr
+
     PhdrEntries []ELF64Phdr
 
-    Symbols     [](*ELF64Sym)
+    Symbols     []NamedSymbol
 }
 
 func (elf *ELF64) ParseShdr(elfDump []byte) error {
@@ -319,9 +326,16 @@ func (elf *ELF64) ParseShdr(elfDump []byte) error {
         return err
     }
 
-    entryOffset := elf.Header.ShOff + 0x40
+    elf.ShdrEntries = make(map[string]*ELF64Shdr)
+
+    entryOffset := elf.Header.ShOff
+
+    // Section Header String Table offset
+    strTabEntOff := 0x40 * uint64(elf.Header.ShStrNdx) + entryOffset
+    off := binary.LittleEndian.Uint64(elfDump[strTabEntOff+0x18:strTabEntOff+0x20])
+
     // The first section is always null
-    for entryNdx := uint16(1) ; entryNdx < elf.Header.ShNum; entryNdx ++ {
+    for entryNdx := uint16(0) ; entryNdx <= elf.Header.ShNum; entryNdx ++ {
         entry := &ELF64Shdr{}
         entry.ShName = binary.LittleEndian.Uint32(elfDump[entryOffset:entryOffset + 4])
         entry.ShType = binary.LittleEndian.Uint32(elfDump[entryOffset+0x04:entryOffset+0x08])
@@ -333,25 +347,46 @@ func (elf *ELF64) ParseShdr(elfDump []byte) error {
         entry.ShInfo = binary.LittleEndian.Uint32(elfDump[entryOffset+0x2c:entryOffset+0x30])
         entry.ShAddrAlign = binary.LittleEndian.Uint64(elfDump[entryOffset+0x30:entryOffset+0x38])
         entry.ShEntSize = binary.LittleEndian.Uint64(elfDump[entryOffset+0x38:entryOffset+0x40])
-        elf.ShdrEntries = append(elf.ShdrEntries, entry)
+
+        nullByteNdx := find[byte](elfDump[off + uint64(entry.ShName):], 0)
+        sectionName := string(elfDump[off + uint64(entry.ShName) : off + uint64(entry.ShName) + uint64(nullByteNdx)])
+        
+        elf.ShdrEntries[sectionName] = entry
+
         entryOffset += 0x40
     }
 
     return nil
 }
 
-func (elf *ELF64) ParseSymTable(elfDump []byte) error {
-    var symtab *ELF64Shdr
-
-    for _, section := range elf.ShdrEntries {
-        if section.ShType == SHT_SYMTAB {
-            symtab = section
-            break
+func find[T comparable](s []T, x T) int {
+    for ndx, val := range s {
+        if x == val {
+            return ndx
         }
     }
 
-    if symtab != nil {
+    return -1
+}
+
+func (elf *ELF64) ParseSymTable(elfDump []byte) error {
+    var symtab *ELF64Shdr
+    var strtab *ELF64Shdr
+
+    for sectionName, section := range elf.ShdrEntries {
+        if section.ShType == SHT_SYMTAB {
+            symtab = section
+        } else if sectionName == ".strtab" {
+            strtab = section
+        }
+    }
+
+    if symtab == nil {
         return errors.New("No symbol table found")
+    }
+
+    if strtab == nil {
+        return errors.New("No string table found")
     }
 
     // parse each symbol
@@ -364,8 +399,28 @@ func (elf *ELF64) ParseSymTable(elfDump []byte) error {
             StValue: binary.LittleEndian.Uint64(elfDump[offset+0x08:offset+0x10]),
             StSize: binary.LittleEndian.Uint64(elfDump[offset+0x10:offset+0x18]),
         }
+        
+        // search for the nullbyte
+        nullByteNdx := find[byte](elfDump[strtab.ShOff + uint64(symbol.StName):], 0)
 
-        elf.Symbols = append(elf.Symbols, &symbol)
+        if nullByteNdx == -1 {
+            elf.Symbols = append(
+                elf.Symbols,
+                NamedSymbol {
+                    Sym: &symbol,
+                    Name: "",
+                },
+            )
+        } else {
+            elf.Symbols = append(
+                elf.Symbols,
+                NamedSymbol {
+                    Sym: &symbol,
+                    Name: string(elfDump[strtab.ShOff + uint64(symbol.StName) :
+                        uint64(strtab.ShOff) + uint64(symbol.StName) + uint64(nullByteNdx)]),
+                },
+            )
+        }
     }
 
     return nil
@@ -379,4 +434,40 @@ func (sym ELF64Sym) GetBinding() byte {
     return sym.StInfo & 0xf0
 }
 
+func New(filepath string) (*ELF64, error) {
+    file, err := os.Open(filepath)
+    if err != nil {
+        return nil, err
+    }
 
+    buffer := make([]byte, 1024 * 1024 * 1024)
+    _, err = file.Read(buffer)
+    if err != nil {
+        return nil, err
+    }
+    
+    elf := &ELF64{
+        Filename: filepath,
+        File: file,
+    }
+
+    // Parse ELF header
+    err = elf.Header.Parse(buffer)
+    if err != nil {
+        return nil, err
+    }
+    
+    // Parse Section Header
+    err = elf.ParseShdr(buffer)
+    if err != nil {
+        return nil, err
+    }
+     
+    // Parse Symbol Table
+    elf.ParseSymTable(buffer)
+    if err != nil {
+        return nil, err
+    }
+
+    return elf, nil
+}

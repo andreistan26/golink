@@ -4,7 +4,6 @@ import (
 	"os"
 	"reflect"
 	"testing"
-    "fmt"
 
 	"github.com/stretchr/testify/assert"
 )
@@ -39,7 +38,9 @@ func TestELF64HeaderParse(t *testing.T) {
         t.Errorf("%v", err)
     }
     
-    header, err := ParseHeader(objFileData)
+    elf := ELF64{}
+
+    elf.Header.Parse(objFileData)
 
     refHeader := ELF64Ehdr{
         Ident: [16]byte {
@@ -63,7 +64,7 @@ func TestELF64HeaderParse(t *testing.T) {
         ShStrNdx: 11,
     }
 
-    assert.True(t, reflect.DeepEqual(refHeader, header), "ELF Header parsing failed")
+    assert.True(t, reflect.DeepEqual(refHeader, elf.Header), "ELF Header parsing failed")
 }
 
 func TestELF64SectionTable(t *testing.T) {
@@ -78,11 +79,68 @@ func TestELF64SectionTable(t *testing.T) {
         t.Errorf("%v", err)
     }
     
-    header, err := ParseHeader(objFileData)
-    elf := &ELF64 {
-        Header: header,
+    elf := ELF64{}
+
+    err = elf.Header.Parse(objFileData)
+    if err != nil {
+        t.Errorf("Error when parsing Header")
     }
 
-    elf.ParseShdr(objFileData)
-    fmt.Printf("%v", elf.ShdrEntries[0])
+    err = elf.ParseShdr(objFileData)
+    if err != nil {
+        t.Errorf("Error when parsing Section header")
+    }
+    
+    assert.True(t, elf.ShdrEntries[".text"] != nil , "Second section should be .data")
+    assert.True(t, elf.ShdrEntries[".data"].ShType == SHT_PROGBITS, "8th section should be of type RELA")
+    assert.True(t, elf.ShdrEntries[".rela.eh_frame"].ShSize == 0x18, "8th section should have size 0x18")
+}
+
+func TestELF64SymbolTable(t *testing.T) {
+    file, err := os.Open("../../data/sample_relocatable_symbols.o")
+    if err != nil {
+        t.Errorf("Object file not found")
+    }
+
+    objFileData := make([]byte, 1024 * 1024)
+    _, err = file.Read(objFileData)
+    if err != nil {
+        t.Errorf("%v", err)
+    }
+    
+    elf := ELF64{}
+
+    err = elf.Header.Parse(objFileData)
+    if err != nil {
+        t.Errorf("Error when parsing Header %v", err)
+    }
+
+    err = elf.ParseShdr(objFileData)
+    if err != nil {
+        t.Errorf("Error when parsing Section Header table %v", err)
+    }
+
+    err = elf.ParseSymTable(objFileData)
+    if err != nil {
+        t.Errorf("Error when parsing Symbol table: %v", err)
+    }
+
+    refSyms := map[string]int{
+        "a_i" : 1,
+        "a_ci" : 1,
+        "main" : 1,
+        "a_ei" : 1,
+        "" : 1,
+        "foo_e" : 1,
+        "bar_i" : 1,
+        "main.c" : 1,
+    }
+
+    assert.True(t, int(elf.ShdrEntries[".symtab"].ShSize) / 0x18 == len(elf.Symbols), "Mismatch between ref and actual")
+
+    for _, namedSymbol := range elf.Symbols {
+        if _, ok := refSyms[namedSymbol.Name]; !ok {
+            t.Errorf("%v not found", namedSymbol.Name)
+        }
+    }
 }
