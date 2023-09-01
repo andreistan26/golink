@@ -1,9 +1,10 @@
 package linker
 
 import (
+	"errors"
+	"github.com/andreistan26/golink/pkg/log"
+
 	"github.com/andreistan26/golink/pkg/elf"
-    "errors"
-    "log"
 )
 
 const (
@@ -41,7 +42,7 @@ type Linker struct {
     UndefinedSymbols    map[string]struct{}
 }
 
-func New(inputs LinkerInputs) error {
+func Link(inputs LinkerInputs) (*elf.ELF64, error) {
     linker := &Linker{
         LinkerInputs: inputs,
         Elfs: []*elf.ELF64{},
@@ -49,11 +50,13 @@ func New(inputs LinkerInputs) error {
         UndefinedSymbols: make(map[string]struct{}),
     }
 
+    log.Infof("Linker input files received %v", inputs.Filenames)
+    
     for _, inputFile := range linker.LinkerInputs.Filenames {
         linker.NewFile(inputFile)
     }
 
-    return nil
+    return nil,nil
 }
 
 func (linker *Linker) NewFile(filepath string) error {
@@ -66,6 +69,7 @@ func (linker *Linker) NewFile(filepath string) error {
     for _, sym := range objFile.Symbols {
         linker.UpdateSymbol(sym, objFile)
     }
+
     return nil
 }
 
@@ -78,10 +82,12 @@ func (linker *Linker) UpdateSymbol(namedSymbol *elf.NamedSymbol, objFile *elf.EL
 
     if !found {
         // add a new entry into symbol hashtable
-        linker.Symbols[namedSymbol.Name] = &SymbolRouter{
+        router = &SymbolRouter{
             RelatedSymbols: []*ConnectedSymbol {},
             DefinedSymbol: nil,
         }
+
+        linker.Symbols[namedSymbol.Name] = router
     }
 
     if router.DefinedSymbol == nil {
@@ -109,10 +115,9 @@ func (linker *Linker) UpdateSymbol(namedSymbol *elf.NamedSymbol, objFile *elf.EL
         if entry.Symbol.GetType() == elf.STT_NOTYPE {
             // update reference(entry) with the found definition
             router.RelatedSymbols = append(router.RelatedSymbols, entry)
-            
             return nil
         }
-        log.Println("Should have not ended up here")
+        log.Warnf("Should have not ended up here")
     }
 
     return nil

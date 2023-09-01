@@ -313,12 +313,13 @@ type ELF64 struct {
 
     Header ELF64Ehdr
     
-    // Transform into named map
-    ShdrEntries map[string]*ELF64Shdr
+    // stores same pointers
+    ShdrEntriesMapped   map[string]*ELF64Shdr
+    ShdrEntries         []*ELF64Shdr
 
     PhdrEntries []ELF64Phdr
 
-    Symbols     []NamedSymbol
+    Symbols     []*NamedSymbol
 }
 
 func (elf *ELF64) ParseShdr(elfDump []byte) error {
@@ -326,7 +327,7 @@ func (elf *ELF64) ParseShdr(elfDump []byte) error {
         return err
     }
 
-    elf.ShdrEntries = make(map[string]*ELF64Shdr)
+    elf.ShdrEntriesMapped = make(map[string]*ELF64Shdr)
 
     entryOffset := elf.Header.ShOff
 
@@ -351,7 +352,8 @@ func (elf *ELF64) ParseShdr(elfDump []byte) error {
         nullByteNdx := find[byte](elfDump[off + uint64(entry.ShName):], 0)
         sectionName := string(elfDump[off + uint64(entry.ShName) : off + uint64(entry.ShName) + uint64(nullByteNdx)])
         
-        elf.ShdrEntries[sectionName] = entry
+        elf.ShdrEntriesMapped[sectionName] = entry
+        elf.ShdrEntries = append(elf.ShdrEntries, entry)
 
         entryOffset += 0x40
     }
@@ -373,7 +375,7 @@ func (elf *ELF64) ParseSymTable(elfDump []byte) error {
     var symtab *ELF64Shdr
     var strtab *ELF64Shdr
 
-    for sectionName, section := range elf.ShdrEntries {
+    for sectionName, section := range elf.ShdrEntriesMapped {
         if section.ShType == SHT_SYMTAB {
             symtab = section
         } else if sectionName == ".strtab" {
@@ -406,7 +408,7 @@ func (elf *ELF64) ParseSymTable(elfDump []byte) error {
         if nullByteNdx == -1 {
             elf.Symbols = append(
                 elf.Symbols,
-                NamedSymbol {
+                &NamedSymbol {
                     Sym: &symbol,
                     Name: "",
                 },
@@ -414,7 +416,7 @@ func (elf *ELF64) ParseSymTable(elfDump []byte) error {
         } else {
             elf.Symbols = append(
                 elf.Symbols,
-                NamedSymbol {
+                &NamedSymbol {
                     Sym: &symbol,
                     Name: string(elfDump[strtab.ShOff + uint64(symbol.StName) :
                         uint64(strtab.ShOff) + uint64(symbol.StName) + uint64(nullByteNdx)]),
