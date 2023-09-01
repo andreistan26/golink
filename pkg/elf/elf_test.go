@@ -91,9 +91,9 @@ func TestELF64SectionTable(t *testing.T) {
 		t.Errorf("Error when parsing Section header")
 	}
 
-	assert.True(t, elf.ShdrEntries[".text"] != nil, "Second section should be .data")
-	assert.True(t, elf.ShdrEntries[".data"].ShType == SHT_PROGBITS, "8th section should be of type RELA")
-	assert.True(t, elf.ShdrEntries[".rela.eh_frame"].ShSize == 0x18, "8th section should have size 0x18")
+	assert.True(t, elf.ShdrEntriesMapped[".text"] != nil, "Second section should be .data")
+	assert.True(t, elf.ShdrEntriesMapped[".data"].ShType == SHT_PROGBITS, "8th section should be of type RELA")
+	assert.True(t, elf.ShdrEntriesMapped[".rela.eh_frame"].ShSize == 0x18, "8th section should have size 0x18")
 }
 
 func TestELF64SymbolTable(t *testing.T) {
@@ -136,7 +136,7 @@ func TestELF64SymbolTable(t *testing.T) {
 		"main.c": 1,
 	}
 
-	assert.True(t, int(elf.ShdrEntries[".symtab"].ShSize)/0x18 == len(elf.Symbols), "Mismatch between ref and actual")
+	assert.True(t, int(elf.ShdrEntriesMapped[".symtab"].ShSize)/0x18 == len(elf.Symbols), "Mismatch between ref and actual")
 
 	for _, namedSymbol := range elf.Symbols {
 		if _, ok := refSyms[namedSymbol.Name]; !ok {

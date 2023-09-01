@@ -3,9 +3,12 @@ package elf
 import (
 	"encoding/binary"
 	"errors"
+	"fmt"
 	"os"
 	"reflect"
 )
+
+//go:generate stringer -type STT,STB,ElfClass,ElfData,ElfOsAbi,ET,SHT_TYPE,SHT_FLAGS -output elf_string.go
 
 /*
    The following structures and interface are documented by https://www.uclibc.org/docs/elf-64-gen.pdf
@@ -31,31 +34,53 @@ type ELF64Sym struct {
 	StSize uint64
 }
 
-const (
-	STT_NOTYPE  = 0
-	STT_OBJECT  = 1
-	STT_FUNC    = 2
-	STT_SECTION = 3
-	STT_FILE    = 4
-	STT_LOOS    = 10
-	STT_HIOS    = 12
-	STT_LOPROC  = 13
-	STT_HIPROC  = 15
-)
+func (sym ELF64Sym) String() string {
+	return fmt.Sprintf(
+		"StName:    %v\n"+
+			"StInfo:    %v\n"+
+			"Binding:   %v\n"+
+			"Type:      %v\n"+
+			"StOther:   %v\n"+
+			"StShNdx:   %v\n"+
+			"StValue:   %v\n"+
+			"StSize:    %v\n",
+		sym.StName, sym.StInfo,
+		sym.GetBinding(), sym.GetType(),
+		sym.StOther, sym.StShNdx,
+		sym.StValue, sym.StSize,
+	)
+}
+
+type STT byte
 
 const (
-	STB_LOCAL  = 0
-	STB_GLOBAL = 1
-	STB_WEAK   = 2
-	STB_LOOS   = 10
-	STB_HIOS   = 12
-	STB_LOPROC = 13
-	STB_HIPROC = 15
+	STT_NOTYPE  STT = iota // 0
+	STT_OBJECT             // 1
+	STT_FUNC               // 2
+	STT_SECTION            // 3
+	STT_FILE               // 4
+
+	STT_LOOS   STT = 10
+	STT_HIOS   STT = 12
+	STT_LOPROC STT = 13
+	STT_HIPROC STT = 15
+)
+
+type STB byte
+
+const (
+	STB_LOCAL  STB = iota // 0
+	STB_GLOBAL            // 1
+	STB_WEAK              // 2
+	STB_LOOS   STB = 10   // 10
+	STB_HIOS   STB = 12   // 12
+	STB_LOPROC STB = 13   // 13
+	STB_HIPROC STB = 15   // 15
 )
 
 type ELF64Ehdr struct {
 	Ident     [16]byte // ELF identification
-	Type      uint16   // Object file type
+	Type      ET       // Object file type
 	Machine   uint16   // Machine type
 	Version   uint32   // Object file version
 	Entry     uint64   // Entry point address
@@ -68,6 +93,30 @@ type ELF64Ehdr struct {
 	ShEntSize uint16   // Size of the Section Header entry
 	ShNum     uint16   // Number of Section Header entries
 	ShStrNdx  uint16   // Section name String Table index
+}
+
+func (ehdr ELF64Ehdr) String() string {
+	return fmt.Sprintf(
+		"Ident:     %v\n"+
+			"Type:      %v\n"+
+			"Machine:   %v\n"+
+			"Version:   %v\n"+
+			"Entry:     %v\n"+
+			"PhOff:     %v\n"+
+			"ShOff:     %v\n"+
+			"Flags:     %v\n"+
+			"EhSize:    %v\n"+
+			"PhEntSize: %v\n"+
+			"PhNum:     %v\n"+
+			"ShEntSize: %v\n"+
+			"ShNum:     %v\n"+
+			"ShStrNdx:  %v\n",
+		ehdr.Ident, ehdr.Type, ehdr.Machine,
+		ehdr.Version, ehdr.Entry, ehdr.PhOff,
+		ehdr.ShOff, ehdr.Flags, ehdr.EhSize,
+		ehdr.PhEntSize, ehdr.PhNum, ehdr.ShEntSize,
+		ehdr.ShNum, ehdr.ShStrNdx,
+	)
 }
 
 const (
@@ -105,7 +154,7 @@ func (elf64Ehdr *ELF64Ehdr) Parse(elfDump []byte) error {
 	}
 
 	*elf64Ehdr = ELF64Ehdr{
-		Type:      binary.LittleEndian.Uint16(elfDump[0x10:0x12]),
+		Type:      ET(binary.LittleEndian.Uint16(elfDump[0x10:0x12])),
 		Machine:   binary.LittleEndian.Uint16(elfDump[0x12:0x14]),
 		Version:   binary.LittleEndian.Uint32(elfDump[0x14:0x18]),
 		Entry:     binary.LittleEndian.Uint64(elfDump[0x18:0x20]),
@@ -125,40 +174,48 @@ func (elf64Ehdr *ELF64Ehdr) Parse(elfDump []byte) error {
 	return nil
 }
 
-const (
-	ELFCLASS32 uint32 = 1
-	ELFCLASS64        = 2
-)
+type ElfClass uint32
 
 const (
-	ELFDATA2LSB uint32 = 1
-	ELFDATA2MSB        = 2
+	ELFCLASS32 ElfClass = iota + 1 // 1
+	ELFCLASS64                     // 2
 )
 
+type ElfData uint32
+
 const (
-	ELFOSABI_SYSV       = 0
-	ELFOSABI_HPUX       = 1
-	ELFOSABI_STANDALONE = 255
+	ELFDATA2LSB ElfData = iota + 1 // 1
+	ELFDATA2MSB                    // 2
+)
+
+type ElfOsAbi byte
+
+const (
+	ELFOSABI_SYSV ElfOsAbi = iota
+	ELFOSABI_HPUX
+	ELFOSABI_STANDALONE ElfOsAbi = 255
 )
 
 // Type of ELF file
+type ET uint32
+
 const (
-	ET_NONE uint32 = 0
+	ET_NONE ET = iota
 
 	// Relocatable object file
-	ET_REL = 1
+	ET_REL // 1
 
 	// Executable file
-	ET_EXEC = 2
+	ET_EXEC // 2
 
 	// Shared object file
-	ET_DYN = 3
+	ET_DYN // 3
 
-	ET_CORE   = 4
-	ET_LOOS   = 0xFE00
-	ET_HIOS   = 0xFEFF
-	ET_LOPROC = 0xFF00
-	ET_HIPROC = 0xFFFF
+	ET_CORE      // 4
+	ET_LOOS   ET = 0xFE00
+	ET_HIOS   ET = 0xFEFF
+	ET_LOPROC ET = 0xFF00
+	ET_HIPROC ET = 0xFFFF
 )
 
 func (elf64Ehdr *ELF64Ehdr) checkParsed() error {
@@ -169,7 +226,7 @@ func (elf64Ehdr *ELF64Ehdr) checkParsed() error {
 	return nil
 }
 
-func (elf64Ehdr *ELF64Ehdr) GetClass() (uint32, error) {
+func (elf64Ehdr *ELF64Ehdr) GetClass() (ElfClass, error) {
 	if err := elf64Ehdr.checkParsed(); err != nil {
 		return 0, err
 	}
@@ -181,7 +238,7 @@ func (elf64Ehdr *ELF64Ehdr) GetClass() (uint32, error) {
 	return ELFCLASS64, nil
 }
 
-func (elf64Ehdr *ELF64Ehdr) GetEndianess() (uint32, error) {
+func (elf64Ehdr *ELF64Ehdr) GetEndianess() (ElfData, error) {
 	if err := elf64Ehdr.checkParsed(); err != nil {
 		return 0, err
 	}
@@ -201,12 +258,12 @@ func (elf64Ehdr *ELF64Ehdr) GetVersion() (uint32, error) {
 	return uint32(elf64Ehdr.Ident[EI_VERSION]), nil
 }
 
-func (elf64Ehdr *ELF64Ehdr) GetOsABI() (uint32, error) {
+func (elf64Ehdr *ELF64Ehdr) GetOsABI() (ElfOsAbi, error) {
 	if err := elf64Ehdr.checkParsed(); err != nil {
 		return 0, err
 	}
 
-	return uint32(elf64Ehdr.Ident[EI_OSABI]), nil
+	return ElfOsAbi(elf64Ehdr.Ident[EI_OSABI]), nil
 }
 
 func (elf64Ehdr *ELF64Ehdr) GetABIVersion() (uint32, error) {
@@ -219,9 +276,9 @@ func (elf64Ehdr *ELF64Ehdr) GetABIVersion() (uint32, error) {
 
 // Section header entries
 type ELF64Shdr struct {
-	ShName      uint32 // offset to the section name relative to section name table
-	ShType      uint32 // section type
-	ShFlags     uint64 //
+	ShName      uint32    // offset to the section name relative to section name table
+	ShType      SHT_TYPE  // section type
+	ShFlags     SHT_FLAGS //
 	ShAddr      uint64
 	ShOff       uint64
 	ShSize      uint64
@@ -231,29 +288,33 @@ type ELF64Shdr struct {
 	ShEntSize   uint64
 }
 
-const (
-	SHT_NULL     = 0
-	SHT_PROGBITS = 1
-	SHT_SYMTAB   = 2
-	SHT_STRTAB   = 3
-	SHT_RELA     = 4
-	SHT_HASH     = 5
-	SHT_DYNAMIC  = 6
-	SHT_NOTE     = 7
-	SHT_NOBITS   = 8
-	SHT_REL      = 9
-	SHT_SHLIB    = 10
-	SHT_DYNSYM   = 11
-	SHT_LOOS     = 0x60000000
-	SHT_HIOS     = 0x6FFFFFFF
-	SHT_LOPROC   = 0x70000000
-	SHT_HIPROC   = 0x70000000
-)
+type SHT_TYPE uint32
 
 const (
-	SHF_WRITE     = 0x1
-	SHF_ALLOC     = 0x2
-	SHF_EXECINSTR = 0x4
+	SHT_NULL     SHT_TYPE = iota // 0
+	SHT_PROGBITS                 // 1
+	SHT_SYMTAB                   // 2
+	SHT_STRTAB                   // 3
+	SHT_RELA                     // 4
+	SHT_HASH                     // 5
+	SHT_DYNAMIC                  // 6
+	SHT_NOTE                     // 7
+	SHT_NOBITS                   // 8
+	SHT_REL                      // 9
+	SHT_SHLIB                    // 10
+	SHT_DYNSYM                   // 11
+	SHT_LOOS     SHT_TYPE = 0x60000000
+	SHT_HIOS     SHT_TYPE = 0x6FFFFFFF
+	SHT_LOPROC   SHT_TYPE = 0x70000000
+	SHT_HIPROC   SHT_TYPE = 0x70000000
+)
+
+type SHT_FLAGS uint64
+
+const (
+	SHF_WRITE     SHT_FLAGS = 1 << iota //0x1
+	SHF_ALLOC                           // 0x2
+	SHF_EXECINSTR                       // 0x4
 	SHF_MASKOS    = 0x0F000000
 	SHF_MASKPROC  = 0xF0000000
 )
@@ -339,8 +400,8 @@ func (elf *ELF64) ParseShdr(elfDump []byte) error {
 	for entryNdx := uint16(0); entryNdx <= elf.Header.ShNum; entryNdx++ {
 		entry := &ELF64Shdr{}
 		entry.ShName = binary.LittleEndian.Uint32(elfDump[entryOffset : entryOffset+4])
-		entry.ShType = binary.LittleEndian.Uint32(elfDump[entryOffset+0x04 : entryOffset+0x08])
-		entry.ShFlags = binary.LittleEndian.Uint64(elfDump[entryOffset+0x08 : entryOffset+0x10])
+		entry.ShType = SHT_TYPE(binary.LittleEndian.Uint32(elfDump[entryOffset+0x04 : entryOffset+0x08]))
+		entry.ShFlags = SHT_FLAGS(binary.LittleEndian.Uint64(elfDump[entryOffset+0x08 : entryOffset+0x10]))
 		entry.ShAddr = binary.LittleEndian.Uint64(elfDump[entryOffset+0x10 : entryOffset+0x18])
 		entry.ShOff = binary.LittleEndian.Uint64(elfDump[entryOffset+0x18 : entryOffset+0x20])
 		entry.ShSize = binary.LittleEndian.Uint64(elfDump[entryOffset+0x20 : entryOffset+0x28])
@@ -427,12 +488,12 @@ func (elf *ELF64) ParseSymTable(elfDump []byte) error {
 	return nil
 }
 
-func (sym ELF64Sym) GetType() byte {
-	return sym.StInfo & 0x0f
+func (sym ELF64Sym) GetType() STT {
+	return STT(sym.StInfo & 0x0f)
 }
 
-func (sym ELF64Sym) GetBinding() byte {
-	return sym.StInfo & 0xf0
+func (sym ELF64Sym) GetBinding() STB {
+	return STB(sym.StInfo&0xf0) >> 4
 }
 
 func New(filepath string) (*ELF64, error) {

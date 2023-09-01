@@ -75,6 +75,7 @@ func (linker *Linker) NewFile(filepath string) error {
 
 func (linker *Linker) UpdateSymbol(namedSymbol *elf.NamedSymbol, objFile *elf.ELF64) error {
 	router, found := linker.Symbols[namedSymbol.Name]
+	log.Debugf("Named Symbol in update %v", namedSymbol)
 	entry := &ConnectedSymbol{
 		Symbol: namedSymbol.Sym,
 		Elf:    objFile,
@@ -98,7 +99,7 @@ func (linker *Linker) UpdateSymbol(namedSymbol *elf.NamedSymbol, objFile *elf.EL
 		return nil
 	} else {
 		if entry.Symbol.GetBinding() == router.DefinedSymbol.Symbol.GetBinding() {
-			if entry.Symbol.GetType() == elf.STB_GLOBAL {
+			if entry.Symbol.GetBinding() == elf.STB_GLOBAL {
 				return errors.New("Two strong symbols with same name.")
 			} else {
 				// probably entry is weak and definition is weak
