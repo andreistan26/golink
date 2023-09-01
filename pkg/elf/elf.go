@@ -3,8 +3,8 @@ package elf
 import (
 	"encoding/binary"
 	"errors"
+	"os"
 	"reflect"
-    "os"
 )
 
 /*
@@ -12,464 +12,463 @@ import (
 */
 
 type ELF64Sym struct {
-    // string table offset
-    StName  uint32
+	// string table offset
+	StName uint32
 
-    // Type and Binding
-    StInfo  byte
-    
-    // Padding
-    StOther byte
+	// Type and Binding
+	StInfo byte
 
-    // section header index
-    StShNdx uint16
+	// Padding
+	StOther byte
 
-    // section offset
-    StValue uint64
+	// section header index
+	StShNdx uint16
 
-    // object size
-    StSize uint64
+	// section offset
+	StValue uint64
+
+	// object size
+	StSize uint64
 }
 
 const (
-    STT_NOTYPE = 0
-    STT_OBJECT = 1
-    STT_FUNC = 2
-    STT_SECTION = 3
-    STT_FILE = 4
-    STT_LOOS = 10
-    STT_HIOS = 12
-    STT_LOPROC = 13
-    STT_HIPROC = 15
+	STT_NOTYPE  = 0
+	STT_OBJECT  = 1
+	STT_FUNC    = 2
+	STT_SECTION = 3
+	STT_FILE    = 4
+	STT_LOOS    = 10
+	STT_HIOS    = 12
+	STT_LOPROC  = 13
+	STT_HIPROC  = 15
 )
 
 const (
-    STB_LOCAL = 0
-    STB_GLOBAL = 1
-    STB_WEAK = 2
-    STB_LOOS = 10
-    STB_HIOS = 12
-    STB_LOPROC = 13
-    STB_HIPROC = 15
+	STB_LOCAL  = 0
+	STB_GLOBAL = 1
+	STB_WEAK   = 2
+	STB_LOOS   = 10
+	STB_HIOS   = 12
+	STB_LOPROC = 13
+	STB_HIPROC = 15
 )
 
 type ELF64Ehdr struct {
-    Ident       [16]byte    // ELF identification
-    Type        uint16      // Object file type
-    Machine     uint16      // Machine type
-    Version     uint32      // Object file version
-    Entry       uint64      // Entry point address
-    PhOff       uint64      // Program Header offset
-    ShOff       uint64      // Section Header offset
-    Flags       uint32      // Processor specific flags
-    EhSize      uint16      // ELF Header size
-    PhEntSize   uint16      // Size of Program Header
-    PhNum       uint16      // Number of program header entries
-    ShEntSize   uint16      // Size of the Section Header entry
-    ShNum       uint16      // Number of Section Header entries
-    ShStrNdx    uint16      // Section name String Table index
+	Ident     [16]byte // ELF identification
+	Type      uint16   // Object file type
+	Machine   uint16   // Machine type
+	Version   uint32   // Object file version
+	Entry     uint64   // Entry point address
+	PhOff     uint64   // Program Header offset
+	ShOff     uint64   // Section Header offset
+	Flags     uint32   // Processor specific flags
+	EhSize    uint16   // ELF Header size
+	PhEntSize uint16   // Size of Program Header
+	PhNum     uint16   // Number of program header entries
+	ShEntSize uint16   // Size of the Section Header entry
+	ShNum     uint16   // Number of Section Header entries
+	ShStrNdx  uint16   // Section name String Table index
 }
 
 const (
-    EI_MAG0         = 0
-    EI_MAG1         = 1
-    EI_MAG2         = 2
-    EI_MAG3         = 3
-    EI_CLASS        = 4 
-    EI_DATA         = 5
-    EI_VERSION      = 6
-    EI_OSABI        = 7
-    EI_ABIVERSION   = 8
-    EI_PAD          = 9
-    EI_NIDENT       = 16
+	EI_MAG0       = 0
+	EI_MAG1       = 1
+	EI_MAG2       = 2
+	EI_MAG3       = 3
+	EI_CLASS      = 4
+	EI_DATA       = 5
+	EI_VERSION    = 6
+	EI_OSABI      = 7
+	EI_ABIVERSION = 8
+	EI_PAD        = 9
+	EI_NIDENT     = 16
 )
 
 var (
-    InvalidMagicErr = errors.New("Invalid magic in ELF file.")
-    UnparsedELFErr = errors.New("ELF header was not parsed.")
+	InvalidMagicErr = errors.New("Invalid magic in ELF file.")
+	UnparsedELFErr  = errors.New("ELF header was not parsed.")
 )
 
 func (elf64Ehdr *ELF64Ehdr) VerifyMagic() error {
-    if !reflect.DeepEqual(elf64Ehdr.Ident[EI_MAG0:EI_CLASS], []byte {'\x7f', 'E', 'L', 'F'}) {
-        return InvalidMagicErr 
-    }
+	if !reflect.DeepEqual(elf64Ehdr.Ident[EI_MAG0:EI_CLASS], []byte{'\x7f', 'E', 'L', 'F'}) {
+		return InvalidMagicErr
+	}
 
-    return nil
+	return nil
 }
 
-func (elf64Ehdr *ELF64Ehdr)Parse(elfDump []byte) error {
-    const ELF_64_EHdr_SIZE = 64
+func (elf64Ehdr *ELF64Ehdr) Parse(elfDump []byte) error {
+	const ELF_64_EHdr_SIZE = 64
 
-    if len(elfDump) < ELF_64_EHdr_SIZE {
-        return errors.New("ELF Header size is bigger than the data provided")
-    }
-    
-    *elf64Ehdr = ELF64Ehdr {
-        Type: binary.LittleEndian.Uint16(elfDump[0x10:0x12]),
-        Machine: binary.LittleEndian.Uint16(elfDump[0x12:0x14]),   
-        Version: binary.LittleEndian.Uint32(elfDump[0x14:0x18]),
-        Entry: binary.LittleEndian.Uint64(elfDump[0x18:0x20]),
-        PhOff: binary.LittleEndian.Uint64(elfDump[0x20:0x28]),
-        ShOff: binary.LittleEndian.Uint64(elfDump[0x28:0x30]),
-        Flags: binary.LittleEndian.Uint32(elfDump[0x30:0x34]),
-        EhSize: binary.LittleEndian.Uint16(elfDump[0x34:0x36]),
-        PhEntSize: binary.LittleEndian.Uint16(elfDump[0x36:0x38]),
-        PhNum: binary.LittleEndian.Uint16(elfDump[0x38:0x3a]),
-        ShEntSize: binary.LittleEndian.Uint16(elfDump[0x3a:0x3c]),
-        ShNum:binary.LittleEndian.Uint16(elfDump[0x3c:0x3e]),
-        ShStrNdx: binary.LittleEndian.Uint16(elfDump[0x3e:0x40]),
-    }
+	if len(elfDump) < ELF_64_EHdr_SIZE {
+		return errors.New("ELF Header size is bigger than the data provided")
+	}
 
-    copy(elf64Ehdr.Ident[:], elfDump[0:16])
+	*elf64Ehdr = ELF64Ehdr{
+		Type:      binary.LittleEndian.Uint16(elfDump[0x10:0x12]),
+		Machine:   binary.LittleEndian.Uint16(elfDump[0x12:0x14]),
+		Version:   binary.LittleEndian.Uint32(elfDump[0x14:0x18]),
+		Entry:     binary.LittleEndian.Uint64(elfDump[0x18:0x20]),
+		PhOff:     binary.LittleEndian.Uint64(elfDump[0x20:0x28]),
+		ShOff:     binary.LittleEndian.Uint64(elfDump[0x28:0x30]),
+		Flags:     binary.LittleEndian.Uint32(elfDump[0x30:0x34]),
+		EhSize:    binary.LittleEndian.Uint16(elfDump[0x34:0x36]),
+		PhEntSize: binary.LittleEndian.Uint16(elfDump[0x36:0x38]),
+		PhNum:     binary.LittleEndian.Uint16(elfDump[0x38:0x3a]),
+		ShEntSize: binary.LittleEndian.Uint16(elfDump[0x3a:0x3c]),
+		ShNum:     binary.LittleEndian.Uint16(elfDump[0x3c:0x3e]),
+		ShStrNdx:  binary.LittleEndian.Uint16(elfDump[0x3e:0x40]),
+	}
 
-    return nil
+	copy(elf64Ehdr.Ident[:], elfDump[0:16])
+
+	return nil
 }
 
 const (
-    ELFCLASS32 uint32 = 1
-    ELFCLASS64 = 2
+	ELFCLASS32 uint32 = 1
+	ELFCLASS64        = 2
 )
 
 const (
-    ELFDATA2LSB uint32 = 1
-    ELFDATA2MSB = 2
+	ELFDATA2LSB uint32 = 1
+	ELFDATA2MSB        = 2
 )
 
 const (
-    ELFOSABI_SYSV = 0
-    ELFOSABI_HPUX = 1
-    ELFOSABI_STANDALONE = 255
+	ELFOSABI_SYSV       = 0
+	ELFOSABI_HPUX       = 1
+	ELFOSABI_STANDALONE = 255
 )
 
 // Type of ELF file
 const (
-    ET_NONE uint32 = 0
+	ET_NONE uint32 = 0
 
-    // Relocatable object file
-    ET_REL      = 1
+	// Relocatable object file
+	ET_REL = 1
 
-    // Executable file
-    ET_EXEC     = 2
+	// Executable file
+	ET_EXEC = 2
 
-    // Shared object file
-    ET_DYN      = 3
+	// Shared object file
+	ET_DYN = 3
 
-    ET_CORE     = 4
-    ET_LOOS     = 0xFE00
-    ET_HIOS     = 0xFEFF
-    ET_LOPROC   = 0xFF00
-    ET_HIPROC   = 0xFFFF
+	ET_CORE   = 4
+	ET_LOOS   = 0xFE00
+	ET_HIOS   = 0xFEFF
+	ET_LOPROC = 0xFF00
+	ET_HIPROC = 0xFFFF
 )
 
-func (elf64Ehdr *ELF64Ehdr) checkParsed() (error) {
-    if len(elf64Ehdr.Ident) != 16 {
-        return UnparsedELFErr
-    }
+func (elf64Ehdr *ELF64Ehdr) checkParsed() error {
+	if len(elf64Ehdr.Ident) != 16 {
+		return UnparsedELFErr
+	}
 
-    return nil
+	return nil
 }
 
 func (elf64Ehdr *ELF64Ehdr) GetClass() (uint32, error) {
-    if err := elf64Ehdr.checkParsed(); err != nil {
-        return 0, err
-    }
+	if err := elf64Ehdr.checkParsed(); err != nil {
+		return 0, err
+	}
 
-    if elf64Ehdr.Ident[EI_CLASS] == 1 {
-        return 0, errors.New("ELF32 is not supported.")
-    }
+	if elf64Ehdr.Ident[EI_CLASS] == 1 {
+		return 0, errors.New("ELF32 is not supported.")
+	}
 
-    return ELFCLASS64, nil    
+	return ELFCLASS64, nil
 }
 
 func (elf64Ehdr *ELF64Ehdr) GetEndianess() (uint32, error) {
-    if err := elf64Ehdr.checkParsed(); err != nil {
-        return 0, err
-    }
+	if err := elf64Ehdr.checkParsed(); err != nil {
+		return 0, err
+	}
 
-    if elf64Ehdr.Ident[EI_DATA] == 1 {
-        return 0, errors.New("Big endianess not supported")
-    }
+	if elf64Ehdr.Ident[EI_DATA] == 1 {
+		return 0, errors.New("Big endianess not supported")
+	}
 
-    return ELFDATA2LSB, nil
+	return ELFDATA2LSB, nil
 }
 
 func (elf64Ehdr *ELF64Ehdr) GetVersion() (uint32, error) {
-    if err := elf64Ehdr.checkParsed(); err != nil {
-        return 0, err
-    }
+	if err := elf64Ehdr.checkParsed(); err != nil {
+		return 0, err
+	}
 
-    return uint32(elf64Ehdr.Ident[EI_VERSION]), nil 
+	return uint32(elf64Ehdr.Ident[EI_VERSION]), nil
 }
 
 func (elf64Ehdr *ELF64Ehdr) GetOsABI() (uint32, error) {
-    if err := elf64Ehdr.checkParsed(); err != nil {
-        return 0, err
-    }
+	if err := elf64Ehdr.checkParsed(); err != nil {
+		return 0, err
+	}
 
-    return uint32(elf64Ehdr.Ident[EI_OSABI]), nil
+	return uint32(elf64Ehdr.Ident[EI_OSABI]), nil
 }
 
 func (elf64Ehdr *ELF64Ehdr) GetABIVersion() (uint32, error) {
-    if err := elf64Ehdr.checkParsed(); err != nil {
-        return 0, err
-    }
+	if err := elf64Ehdr.checkParsed(); err != nil {
+		return 0, err
+	}
 
-    return uint32(elf64Ehdr.Ident[EI_ABIVERSION]), nil 
+	return uint32(elf64Ehdr.Ident[EI_ABIVERSION]), nil
 }
 
 // Section header entries
 type ELF64Shdr struct {
-    ShName  uint32 // offset to the section name relative to section name table
-    ShType  uint32 // section type
-    ShFlags uint64 // 
-    ShAddr  uint64
-    ShOff   uint64
-    ShSize  uint64
-    ShLink  uint32
-    ShInfo  uint32
-    ShAddrAlign uint64
-    ShEntSize   uint64
+	ShName      uint32 // offset to the section name relative to section name table
+	ShType      uint32 // section type
+	ShFlags     uint64 //
+	ShAddr      uint64
+	ShOff       uint64
+	ShSize      uint64
+	ShLink      uint32
+	ShInfo      uint32
+	ShAddrAlign uint64
+	ShEntSize   uint64
 }
 
 const (
-    SHT_NULL = 0
-    SHT_PROGBITS = 1
-    SHT_SYMTAB = 2
-    SHT_STRTAB = 3
-    SHT_RELA = 4
-    SHT_HASH = 5
-    SHT_DYNAMIC = 6
-    SHT_NOTE = 7
-    SHT_NOBITS = 8
-    SHT_REL = 9
-    SHT_SHLIB = 10
-    SHT_DYNSYM = 11
-    SHT_LOOS = 0x60000000
-    SHT_HIOS = 0x6FFFFFFF
-    SHT_LOPROC = 0x70000000
-    SHT_HIPROC = 0x70000000
+	SHT_NULL     = 0
+	SHT_PROGBITS = 1
+	SHT_SYMTAB   = 2
+	SHT_STRTAB   = 3
+	SHT_RELA     = 4
+	SHT_HASH     = 5
+	SHT_DYNAMIC  = 6
+	SHT_NOTE     = 7
+	SHT_NOBITS   = 8
+	SHT_REL      = 9
+	SHT_SHLIB    = 10
+	SHT_DYNSYM   = 11
+	SHT_LOOS     = 0x60000000
+	SHT_HIOS     = 0x6FFFFFFF
+	SHT_LOPROC   = 0x70000000
+	SHT_HIPROC   = 0x70000000
 )
 
 const (
-    SHF_WRITE = 0x1
-    SHF_ALLOC = 0x2
-    SHF_EXECINSTR = 0x4
-    SHF_MASKOS = 0x0F000000
-    SHF_MASKPROC = 0xF0000000
+	SHF_WRITE     = 0x1
+	SHF_ALLOC     = 0x2
+	SHF_EXECINSTR = 0x4
+	SHF_MASKOS    = 0x0F000000
+	SHF_MASKPROC  = 0xF0000000
 )
 
 type ELF64Rel struct {
-    Offset  uint64
-    Info    uint64
+	Offset uint64
+	Info   uint64
 }
 
 type ELF64Rela struct {
-    Offset  uint64
-    Info    uint64
-    Addend  uint64
+	Offset uint64
+	Info   uint64
+	Addend uint64
 }
 
 type ELF64Phdr struct {
-    Type    uint32
-    Flags   uint32
-    Offset  uint64
-    Vaddr   uint64
-    Paddr   uint64 // padding
-    FileSz  uint64
-    MemSz   uint64
-    Align   uint64
+	Type   uint32
+	Flags  uint32
+	Offset uint64
+	Vaddr  uint64
+	Paddr  uint64 // padding
+	FileSz uint64
+	MemSz  uint64
+	Align  uint64
 }
 
 const (
-    PT_NULL = 0
-    PT_LOAD = 1
-    PT_DYNAMIC = 2
-    PT_INTERP = 3
-    PT_NOTE = 4 
-    PT_SHLIB = 5
-    PT_PHDR = 6
-    PT_LOOS = 0x60000000
-    PT_HIOS = 0x6FFFFFFF
-    PT_LOPROC = 0x70000000
-    PT_HIPROC = 0x7FFFFFFF
+	PT_NULL    = 0
+	PT_LOAD    = 1
+	PT_DYNAMIC = 2
+	PT_INTERP  = 3
+	PT_NOTE    = 4
+	PT_SHLIB   = 5
+	PT_PHDR    = 6
+	PT_LOOS    = 0x60000000
+	PT_HIOS    = 0x6FFFFFFF
+	PT_LOPROC  = 0x70000000
+	PT_HIPROC  = 0x7FFFFFFF
 )
 
 const (
-    PF_X = 0x1
-    PF_W = 0x2
-    PF_R = 0x4
-    PF_MASKOS = 0x00FF0000
-    PF_MASKPROC = 0xFF000000
+	PF_X        = 0x1
+	PF_W        = 0x2
+	PF_R        = 0x4
+	PF_MASKOS   = 0x00FF0000
+	PF_MASKPROC = 0xFF000000
 )
 
 type NamedSymbol struct {
-    Sym     *ELF64Sym
-    Name    string
+	Sym  *ELF64Sym
+	Name string
 }
 
 type ELF64 struct {
-    Filename string
-    File    *os.File
+	Filename string
+	File     *os.File
 
-    Header ELF64Ehdr
-    
-    // stores same pointers
-    ShdrEntriesMapped   map[string]*ELF64Shdr
-    ShdrEntries         []*ELF64Shdr
+	Header ELF64Ehdr
 
-    PhdrEntries []ELF64Phdr
+	// stores same pointers
+	ShdrEntriesMapped map[string]*ELF64Shdr
+	ShdrEntries       []*ELF64Shdr
 
-    Symbols     []*NamedSymbol
+	PhdrEntries []ELF64Phdr
+
+	Symbols []*NamedSymbol
 }
 
 func (elf *ELF64) ParseShdr(elfDump []byte) error {
-    if err := elf.Header.checkParsed(); err != nil {
-        return err
-    }
+	if err := elf.Header.checkParsed(); err != nil {
+		return err
+	}
 
-    elf.ShdrEntriesMapped = make(map[string]*ELF64Shdr)
+	elf.ShdrEntriesMapped = make(map[string]*ELF64Shdr)
 
-    entryOffset := elf.Header.ShOff
+	entryOffset := elf.Header.ShOff
 
-    // Section Header String Table offset
-    strTabEntOff := 0x40 * uint64(elf.Header.ShStrNdx) + entryOffset
-    off := binary.LittleEndian.Uint64(elfDump[strTabEntOff+0x18:strTabEntOff+0x20])
+	// Section Header String Table offset
+	strTabEntOff := 0x40*uint64(elf.Header.ShStrNdx) + entryOffset
+	off := binary.LittleEndian.Uint64(elfDump[strTabEntOff+0x18 : strTabEntOff+0x20])
 
-    // The first section is always null
-    for entryNdx := uint16(0) ; entryNdx <= elf.Header.ShNum; entryNdx ++ {
-        entry := &ELF64Shdr{}
-        entry.ShName = binary.LittleEndian.Uint32(elfDump[entryOffset:entryOffset + 4])
-        entry.ShType = binary.LittleEndian.Uint32(elfDump[entryOffset+0x04:entryOffset+0x08])
-        entry.ShFlags = binary.LittleEndian.Uint64(elfDump[entryOffset+0x08:entryOffset+0x10])
-        entry.ShAddr = binary.LittleEndian.Uint64(elfDump[entryOffset+0x10:entryOffset+0x18])
-        entry.ShOff = binary.LittleEndian.Uint64(elfDump[entryOffset+0x18:entryOffset+0x20])
-        entry.ShSize = binary.LittleEndian.Uint64(elfDump[entryOffset+0x20:entryOffset+0x28])
-        entry.ShLink = binary.LittleEndian.Uint32(elfDump[entryOffset+0x28:entryOffset+0x2c])
-        entry.ShInfo = binary.LittleEndian.Uint32(elfDump[entryOffset+0x2c:entryOffset+0x30])
-        entry.ShAddrAlign = binary.LittleEndian.Uint64(elfDump[entryOffset+0x30:entryOffset+0x38])
-        entry.ShEntSize = binary.LittleEndian.Uint64(elfDump[entryOffset+0x38:entryOffset+0x40])
+	// The first section is always null
+	for entryNdx := uint16(0); entryNdx <= elf.Header.ShNum; entryNdx++ {
+		entry := &ELF64Shdr{}
+		entry.ShName = binary.LittleEndian.Uint32(elfDump[entryOffset : entryOffset+4])
+		entry.ShType = binary.LittleEndian.Uint32(elfDump[entryOffset+0x04 : entryOffset+0x08])
+		entry.ShFlags = binary.LittleEndian.Uint64(elfDump[entryOffset+0x08 : entryOffset+0x10])
+		entry.ShAddr = binary.LittleEndian.Uint64(elfDump[entryOffset+0x10 : entryOffset+0x18])
+		entry.ShOff = binary.LittleEndian.Uint64(elfDump[entryOffset+0x18 : entryOffset+0x20])
+		entry.ShSize = binary.LittleEndian.Uint64(elfDump[entryOffset+0x20 : entryOffset+0x28])
+		entry.ShLink = binary.LittleEndian.Uint32(elfDump[entryOffset+0x28 : entryOffset+0x2c])
+		entry.ShInfo = binary.LittleEndian.Uint32(elfDump[entryOffset+0x2c : entryOffset+0x30])
+		entry.ShAddrAlign = binary.LittleEndian.Uint64(elfDump[entryOffset+0x30 : entryOffset+0x38])
+		entry.ShEntSize = binary.LittleEndian.Uint64(elfDump[entryOffset+0x38 : entryOffset+0x40])
 
-        nullByteNdx := find[byte](elfDump[off + uint64(entry.ShName):], 0)
-        sectionName := string(elfDump[off + uint64(entry.ShName) : off + uint64(entry.ShName) + uint64(nullByteNdx)])
-        
-        elf.ShdrEntriesMapped[sectionName] = entry
-        elf.ShdrEntries = append(elf.ShdrEntries, entry)
+		nullByteNdx := find[byte](elfDump[off+uint64(entry.ShName):], 0)
+		sectionName := string(elfDump[off+uint64(entry.ShName) : off+uint64(entry.ShName)+uint64(nullByteNdx)])
 
-        entryOffset += 0x40
-    }
+		elf.ShdrEntriesMapped[sectionName] = entry
+		elf.ShdrEntries = append(elf.ShdrEntries, entry)
 
-    return nil
+		entryOffset += 0x40
+	}
+
+	return nil
 }
 
 func find[T comparable](s []T, x T) int {
-    for ndx, val := range s {
-        if x == val {
-            return ndx
-        }
-    }
+	for ndx, val := range s {
+		if x == val {
+			return ndx
+		}
+	}
 
-    return -1
+	return -1
 }
 
 func (elf *ELF64) ParseSymTable(elfDump []byte) error {
-    var symtab *ELF64Shdr
-    var strtab *ELF64Shdr
+	var symtab *ELF64Shdr
+	var strtab *ELF64Shdr
 
-    for sectionName, section := range elf.ShdrEntriesMapped {
-        if section.ShType == SHT_SYMTAB {
-            symtab = section
-        } else if sectionName == ".strtab" {
-            strtab = section
-        }
-    }
+	for sectionName, section := range elf.ShdrEntriesMapped {
+		if section.ShType == SHT_SYMTAB {
+			symtab = section
+		} else if sectionName == ".strtab" {
+			strtab = section
+		}
+	}
 
-    if symtab == nil {
-        return errors.New("No symbol table found")
-    }
+	if symtab == nil {
+		return errors.New("No symbol table found")
+	}
 
-    if strtab == nil {
-        return errors.New("No string table found")
-    }
+	if strtab == nil {
+		return errors.New("No string table found")
+	}
 
-    // parse each symbol
-    for offset := symtab.ShOff; offset < symtab.ShOff + symtab.ShSize; offset += 0x18 {
-        symbol := ELF64Sym {
-            StName: binary.LittleEndian.Uint32(elfDump[offset:offset+0x04]),
-            StInfo: elfDump[offset+0x04],
-            StOther: elfDump[offset+0x05],
-            StShNdx: binary.LittleEndian.Uint16(elfDump[offset+0x06:offset+0x08]),
-            StValue: binary.LittleEndian.Uint64(elfDump[offset+0x08:offset+0x10]),
-            StSize: binary.LittleEndian.Uint64(elfDump[offset+0x10:offset+0x18]),
-        }
-        
-        // search for the nullbyte
-        nullByteNdx := find[byte](elfDump[strtab.ShOff + uint64(symbol.StName):], 0)
+	// parse each symbol
+	for offset := symtab.ShOff; offset < symtab.ShOff+symtab.ShSize; offset += 0x18 {
+		symbol := ELF64Sym{
+			StName:  binary.LittleEndian.Uint32(elfDump[offset : offset+0x04]),
+			StInfo:  elfDump[offset+0x04],
+			StOther: elfDump[offset+0x05],
+			StShNdx: binary.LittleEndian.Uint16(elfDump[offset+0x06 : offset+0x08]),
+			StValue: binary.LittleEndian.Uint64(elfDump[offset+0x08 : offset+0x10]),
+			StSize:  binary.LittleEndian.Uint64(elfDump[offset+0x10 : offset+0x18]),
+		}
 
-        if nullByteNdx == -1 {
-            elf.Symbols = append(
-                elf.Symbols,
-                &NamedSymbol {
-                    Sym: &symbol,
-                    Name: "",
-                },
-            )
-        } else {
-            elf.Symbols = append(
-                elf.Symbols,
-                &NamedSymbol {
-                    Sym: &symbol,
-                    Name: string(elfDump[strtab.ShOff + uint64(symbol.StName) :
-                        uint64(strtab.ShOff) + uint64(symbol.StName) + uint64(nullByteNdx)]),
-                },
-            )
-        }
-    }
+		// search for the nullbyte
+		nullByteNdx := find[byte](elfDump[strtab.ShOff+uint64(symbol.StName):], 0)
 
-    return nil
+		if nullByteNdx == -1 {
+			elf.Symbols = append(
+				elf.Symbols,
+				&NamedSymbol{
+					Sym:  &symbol,
+					Name: "",
+				},
+			)
+		} else {
+			elf.Symbols = append(
+				elf.Symbols,
+				&NamedSymbol{
+					Sym:  &symbol,
+					Name: string(elfDump[strtab.ShOff+uint64(symbol.StName) : uint64(strtab.ShOff)+uint64(symbol.StName)+uint64(nullByteNdx)]),
+				},
+			)
+		}
+	}
+
+	return nil
 }
 
 func (sym ELF64Sym) GetType() byte {
-    return sym.StInfo & 0x0f
+	return sym.StInfo & 0x0f
 }
 
 func (sym ELF64Sym) GetBinding() byte {
-    return sym.StInfo & 0xf0
+	return sym.StInfo & 0xf0
 }
 
 func New(filepath string) (*ELF64, error) {
-    file, err := os.Open(filepath)
-    if err != nil {
-        return nil, err
-    }
+	file, err := os.Open(filepath)
+	if err != nil {
+		return nil, err
+	}
 
-    buffer := make([]byte, 1024 * 1024 * 1024)
-    _, err = file.Read(buffer)
-    if err != nil {
-        return nil, err
-    }
-    
-    elf := &ELF64{
-        Filename: filepath,
-        File: file,
-    }
+	buffer := make([]byte, 1024*1024*1024)
+	_, err = file.Read(buffer)
+	if err != nil {
+		return nil, err
+	}
 
-    // Parse ELF header
-    err = elf.Header.Parse(buffer)
-    if err != nil {
-        return nil, err
-    }
-    
-    // Parse Section Header
-    err = elf.ParseShdr(buffer)
-    if err != nil {
-        return nil, err
-    }
-     
-    // Parse Symbol Table
-    elf.ParseSymTable(buffer)
-    if err != nil {
-        return nil, err
-    }
+	elf := &ELF64{
+		Filename: filepath,
+		File:     file,
+	}
 
-    return elf, nil
+	// Parse ELF header
+	err = elf.Header.Parse(buffer)
+	if err != nil {
+		return nil, err
+	}
+
+	// Parse Section Header
+	err = elf.ParseShdr(buffer)
+	if err != nil {
+		return nil, err
+	}
+
+	// Parse Symbol Table
+	elf.ParseSymTable(buffer)
+	if err != nil {
+		return nil, err
+	}
+
+	return elf, nil
 }
