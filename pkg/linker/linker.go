@@ -50,7 +50,7 @@ func Link(inputs LinkerInputs) (*elf.ELF64, error) {
 		UndefinedSymbols: make(map[string]struct{}),
 	}
 
-	log.Infof("Linker input files received %v", inputs.Filenames)
+	log.Debugf("Linker input files received %v", inputs.Filenames)
 
 	for _, inputFile := range linker.LinkerInputs.Filenames {
 		linker.NewFile(inputFile)
@@ -67,13 +67,16 @@ func (linker *Linker) NewFile(filepath string) error {
 
 	// Now update symbol hashtable with symbols
 	for _, sym := range objFile.Symbols {
-		linker.UpdateSymbol(sym, objFile)
+		err := linker.UpdateSymbol(sym, objFile)
+		if err != nil {
+			return err
+		}
 	}
 
 	return nil
 }
 
-func Contains[T comparable](needle T, haystack []T) bool {
+func contains[T comparable](needle T, haystack []T) bool {
 	for _, el := range haystack {
 		if needle == el {
 			return true
@@ -85,7 +88,8 @@ func Contains[T comparable](needle T, haystack []T) bool {
 
 func (linker *Linker) UpdateSymbol(namedSymbol *elf.NamedSymbol, objFile *elf.ELF64) error {
 	// We skip symbols that dont matter to resolution
-	if !Contains(namedSymbol.Sym.GetType(), []elf.STT{elf.STT_NOTYPE, elf.STT_FUNC, elf.STT_OBJECT}) {
+	if !contains(namedSymbol.Sym.GetType(), []elf.STT{elf.STT_NOTYPE, elf.STT_FUNC, elf.STT_OBJECT}) ||
+		namedSymbol.Name == "" {
 		return nil
 	}
 
@@ -111,7 +115,10 @@ func (linker *Linker) UpdateSymbol(namedSymbol *elf.NamedSymbol, objFile *elf.EL
 		router.RelatedSymbols = append(router.RelatedSymbols, entry)
 		if entry.Symbol.GetType() != elf.STT_NOTYPE {
 			router.DefinedSymbol = entry
+			delete(linker.UndefinedSymbols, namedSymbol.Name)
 			log.Debugf("Added as defined symbol")
+		} else {
+			linker.UndefinedSymbols[namedSymbol.Name] = struct{}{}
 		}
 		return nil
 	} else {
