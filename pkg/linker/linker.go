@@ -73,8 +73,24 @@ func (linker *Linker) NewFile(filepath string) error {
 	return nil
 }
 
+func Contains[T comparable](needle T, haystack []T) bool {
+	for _, el := range haystack {
+		if needle == el {
+			return true
+		}
+	}
+
+	return false
+}
+
 func (linker *Linker) UpdateSymbol(namedSymbol *elf.NamedSymbol, objFile *elf.ELF64) error {
+	// We skip symbols that dont matter to resolution
+	if !Contains(namedSymbol.Sym.GetType(), []elf.STT{elf.STT_NOTYPE, elf.STT_FUNC, elf.STT_OBJECT}) {
+		return nil
+	}
+
 	router, found := linker.Symbols[namedSymbol.Name]
+
 	log.Debugf("Named Symbol in update %v", namedSymbol)
 	entry := &ConnectedSymbol{
 		Symbol: namedSymbol.Sym,
@@ -95,30 +111,26 @@ func (linker *Linker) UpdateSymbol(namedSymbol *elf.NamedSymbol, objFile *elf.EL
 		router.RelatedSymbols = append(router.RelatedSymbols, entry)
 		if entry.Symbol.GetType() != elf.STT_NOTYPE {
 			router.DefinedSymbol = entry
+			log.Debugf("Added as defined symbol")
 		}
 		return nil
 	} else {
-		if entry.Symbol.GetBinding() == router.DefinedSymbol.Symbol.GetBinding() {
-			if entry.Symbol.GetBinding() == elf.STB_GLOBAL {
-				return errors.New("Two strong symbols with same name.")
-			} else {
-				// probably entry is weak and definition is weak
+		log.Debugf("This entry has a defined symbol")
+		if entry.Symbol.GetType() != elf.STT_NOTYPE {
+			if router.DefinedSymbol.Symbol.GetBinding() == elf.STB_WEAK {
+				// TODO remove the previous defined symbol from the list as it is a weak and we found a strong
+				router.DefinedSymbol.Symbol = entry.Symbol
 				router.RelatedSymbols = append(router.RelatedSymbols, entry)
-				return nil
+			} else {
+				return errors.New("Two strong symbols with same name.")
 			}
-		}
-
-		if entry.Symbol.GetBinding() == elf.STB_WEAK {
-			// ignore the symbol, definition is strong
-			return nil
-		}
-
-		if entry.Symbol.GetType() == elf.STT_NOTYPE {
+		} else {
 			// update reference(entry) with the found definition
+			log.Debugf("Found a definition: %v for the reference %v", router.DefinedSymbol.Symbol,
+				entry.Symbol)
 			router.RelatedSymbols = append(router.RelatedSymbols, entry)
 			return nil
 		}
-		log.Warnf("Should have not ended up here")
 	}
 
 	return nil
