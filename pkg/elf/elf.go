@@ -7,7 +7,6 @@ import (
 	"os"
 	"reflect"
 
-	"github.com/acorn-io/baaah/pkg/name"
 	"github.com/andreistan26/golink/pkg/log"
 )
 
@@ -394,6 +393,7 @@ type SectionDump struct {
 	Data         []byte
 	Symbols      []*NamedSymbol
 	Name         string
+	Index        int
 }
 
 type ELF64 struct {
@@ -448,6 +448,7 @@ func (elf *ELF64) ParseShdr(elfDump []byte) error {
 			Data:         entryData,
 			Symbols:      []*NamedSymbol{},
 			Name:         sectionName,
+			Index:        int(entryNdx),
 		}
 
 		elf.ShdrEntriesMapped[sectionName] = sectionDump

@@ -18,7 +18,7 @@ type LinkerInputs struct {
 }
 
 type ConnectedSymbol struct {
-	Symbol *elf.ELF64Sym
+	Symbol *elf.NamedSymbol
 	Elf    *elf.ELF64
 }
 
@@ -37,7 +37,8 @@ type Linker struct {
 	Executable *elf.ELF64
 	// We index symbols by name and we need
 	// multiple (at least 2) symbols to define
-	Symbols map[string]*SymbolRouter
+	Symbols               map[string]*SymbolRouter
+	SectionDefinedSymbols map[*elf.ELF64Shdr][]*ConnectedSymbol
 
 	// set of all the undefined symbols
 	UndefinedSymbols map[string]struct{}
@@ -45,10 +46,11 @@ type Linker struct {
 
 func Link(inputs LinkerInputs) (*elf.ELF64, error) {
 	linker := &Linker{
-		LinkerInputs:     inputs,
-		Elfs:             []*elf.ELF64{},
-		Symbols:          make(map[string]*SymbolRouter),
-		UndefinedSymbols: make(map[string]struct{}),
+		LinkerInputs:          inputs,
+		Elfs:                  []*elf.ELF64{},
+		Symbols:               make(map[string]*SymbolRouter),
+		UndefinedSymbols:      make(map[string]struct{}),
+		SectionDefinedSymbols: make(map[*elf.ELF64Shdr][]*ConnectedSymbol),
 	}
 
 	log.Debugf("Linker input files received %v", inputs.Filenames)
@@ -56,6 +58,8 @@ func Link(inputs LinkerInputs) (*elf.ELF64, error) {
 	for _, inputFile := range linker.LinkerInputs.Filenames {
 		linker.NewFile(inputFile)
 	}
+
+	linker.fillSectionDefinedSymbols()
 
 	return nil, nil
 }
@@ -77,7 +81,7 @@ func (linker *Linker) NewFile(filepath string) error {
 	return nil
 }
 
-func contains[T comparable](needle T, haystack []T) bool {
+func Contains[T comparable](needle T, haystack []T) bool {
 	for _, el := range haystack {
 		if needle == el {
 			return true
@@ -89,7 +93,7 @@ func contains[T comparable](needle T, haystack []T) bool {
 
 func (linker *Linker) UpdateSymbol(namedSymbol *elf.NamedSymbol, objFile *elf.ELF64) error {
 	// We skip symbols that dont matter to resolution
-	if !contains(namedSymbol.Sym.GetType(), []elf.STT{elf.STT_NOTYPE, elf.STT_FUNC, elf.STT_OBJECT}) ||
+	if !Contains(namedSymbol.Sym.GetType(), []elf.STT{elf.STT_NOTYPE, elf.STT_FUNC, elf.STT_OBJECT}) ||
 		namedSymbol.Name == "" {
 		return nil
 	}
@@ -98,7 +102,7 @@ func (linker *Linker) UpdateSymbol(namedSymbol *elf.NamedSymbol, objFile *elf.EL
 
 	log.Debugf("Named Symbol in update %v", namedSymbol)
 	entry := &ConnectedSymbol{
-		Symbol: namedSymbol.Sym,
+		Symbol: namedSymbol,
 		Elf:    objFile,
 	}
 
@@ -114,7 +118,7 @@ func (linker *Linker) UpdateSymbol(namedSymbol *elf.NamedSymbol, objFile *elf.EL
 
 	if router.DefinedSymbol == nil {
 		router.RelatedSymbols = append(router.RelatedSymbols, entry)
-		if entry.Symbol.GetType() != elf.STT_NOTYPE {
+		if entry.Symbol.Sym.GetType() != elf.STT_NOTYPE {
 			router.DefinedSymbol = entry
 			delete(linker.UndefinedSymbols, namedSymbol.Name)
 			log.Debugf("Added as defined symbol")
@@ -124,8 +128,8 @@ func (linker *Linker) UpdateSymbol(namedSymbol *elf.NamedSymbol, objFile *elf.EL
 		return nil
 	} else {
 		log.Debugf("This entry has a defined symbol")
-		if entry.Symbol.GetType() != elf.STT_NOTYPE {
-			if router.DefinedSymbol.Symbol.GetBinding() == elf.STB_WEAK {
+		if entry.Symbol.Sym.GetType() != elf.STT_NOTYPE {
+			if router.DefinedSymbol.Symbol.Sym.GetBinding() == elf.STB_WEAK {
 				// TODO remove the previous defined symbol from the list as it is a weak and we found a strong
 				router.DefinedSymbol.Symbol = entry.Symbol
 				router.RelatedSymbols = append(router.RelatedSymbols, entry)
@@ -142,4 +146,21 @@ func (linker *Linker) UpdateSymbol(namedSymbol *elf.NamedSymbol, objFile *elf.EL
 	}
 
 	return nil
+}
+
+func (linker *Linker) fillSectionDefinedSymbols() {
+	for _, router := range linker.Symbols {
+		definedSymbol := router.DefinedSymbol
+		definedSymbolSection := definedSymbol.Elf.ShdrEntries[definedSymbol.Symbol.Sym.StShNdx]
+		linker.addSectionDefinedSymbol(definedSymbol, definedSymbolSection.SectionEntry)
+	}
+}
+
+func (linker *Linker) addSectionDefinedSymbol(symbol *ConnectedSymbol, section *elf.ELF64Shdr) {
+	symbols, found := linker.SectionDefinedSymbols[section]
+	if !found {
+		linker.SectionDefinedSymbols[section] = []*ConnectedSymbol{symbol}
+	} else {
+		symbols = append(symbols, symbol)
+	}
 }
