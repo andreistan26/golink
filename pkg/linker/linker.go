@@ -31,9 +31,10 @@ type SymbolRouter struct {
 }
 
 type Linker struct {
-	LinkerInputs LinkerInputs
-	Elfs         []*elf.ELF64
+	LinkerInputs    LinkerInputs
+	Elfs            []*elf.ELF64
 
+    Executable      *elf.ELF64
 	// We index symbols by name and we need
 	// multiple (at least 2) symbols to define
 	Symbols map[string]*SymbolRouter
@@ -142,3 +143,5 @@ func (linker *Linker) UpdateSymbol(namedSymbol *elf.NamedSymbol, objFile *elf.EL
 
 	return nil
 }
+
+func 
