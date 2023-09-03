@@ -247,25 +247,37 @@ func _() {
 	_ = x[SHF_WRITE-1]
 	_ = x[SHF_ALLOC-2]
 	_ = x[SHF_EXECINSTR-4]
+	_ = x[SHF_MERGE-8]
+	_ = x[SHF_STRINGS-16]
+	_ = x[SHF_INFO_LINK-32]
+	_ = x[SHF_LINK_ORDER-64]
+	_ = x[SHF_OS_NONCONFORMING-128]
+	_ = x[SHF_GROUP-256]
+	_ = x[SHF_TLS-512]
+	_ = x[SHF_MASKOS-251658240]
+	_ = x[SHF_MASKPROC-4026531840]
 }
 
-const (
-	_SHT_FLAGS_name_0 = "SHF_WRITESHF_ALLOC"
-	_SHT_FLAGS_name_1 = "SHF_EXECINSTR"
-)
+const _SHT_FLAGS_name = "SHF_WRITESHF_ALLOCSHF_EXECINSTRSHF_MERGESHF_STRINGSSHF_INFO_LINKSHF_LINK_ORDERSHF_OS_NONCONFORMINGSHF_GROUPSHF_TLSSHF_MASKOSSHF_MASKPROC"
 
-var (
-	_SHT_FLAGS_index_0 = [...]uint8{0, 9, 18}
-)
+var _SHT_FLAGS_map = map[SHT_FLAGS]string{
+	1:          _SHT_FLAGS_name[0:9],
+	2:          _SHT_FLAGS_name[9:18],
+	4:          _SHT_FLAGS_name[18:31],
+	8:          _SHT_FLAGS_name[31:40],
+	16:         _SHT_FLAGS_name[40:51],
+	32:         _SHT_FLAGS_name[51:64],
+	64:         _SHT_FLAGS_name[64:78],
+	128:        _SHT_FLAGS_name[78:98],
+	256:        _SHT_FLAGS_name[98:107],
+	512:        _SHT_FLAGS_name[107:114],
+	251658240:  _SHT_FLAGS_name[114:124],
+	4026531840: _SHT_FLAGS_name[124:136],
+}
 
 func (i SHT_FLAGS) String() string {
-	switch {
-	case 1 <= i && i <= 2:
-		i -= 1
-		return _SHT_FLAGS_name_0[_SHT_FLAGS_index_0[i]:_SHT_FLAGS_index_0[i+1]]
-	case i == 4:
-		return _SHT_FLAGS_name_1
-	default:
-		return "SHT_FLAGS(" + strconv.FormatInt(int64(i), 10) + ")"
+	if str, ok := _SHT_FLAGS_map[i]; ok {
+		return str
 	}
+	return "SHT_FLAGS(" + strconv.FormatInt(int64(i), 10) + ")"
 }

@@ -1,11 +1,11 @@
 package elf
 
 import (
-	"encoding/binary"
-	"errors"
-	"fmt"
-	"os"
-	"reflect"
+//"encoding/binary"
+//"errors"
+//"fmt"
+//"os"
+//"reflect"
 )
 
 //go:generate stringer -type STT,STB,ElfClass,ElfData,ElfOsAbi,ET,SHT_TYPE,SHT_FLAGS -output elf_string.go
@@ -312,11 +312,19 @@ const (
 type SHT_FLAGS uint64
 
 const (
-	SHF_WRITE     SHT_FLAGS = 1 << iota //0x1
-	SHF_ALLOC                           // 0x2
-	SHF_EXECINSTR                       // 0x4
-	SHF_MASKOS    = 0x0F000000
-	SHF_MASKPROC  = 0xF0000000
+	SHF_WRITE            SHT_FLAGS = 1 << iota //0x1
+	SHF_ALLOC                                  // 0x2
+	SHF_EXECINSTR                              // 0x4
+	SHF_MERGE                                  // 0x10
+	SHF_STRINGS                                // 0x20
+	SHF_INFO_LINK                              // 0x40
+	SHF_LINK_ORDER                             // 0x80
+	SHF_OS_NONCONFORMING                       // 0x100
+	SHF_GROUP                                  // 0x200
+	SHF_TLS                                    // 0x400
+
+	SHF_MASKOS   SHT_FLAGS = 0x0F000000
+	SHF_MASKPROC SHT_FLAGS = 0xF0000000
 )
 
 type ELF64Rel struct {
@@ -368,6 +376,11 @@ type NamedSymbol struct {
 	Name string
 }
 
+type SectionDump struct {
+	SectionEntry *ELF64Shdr
+	Data         []byte
+}
+
 type ELF64 struct {
 	Filename string
 	File     *os.File
@@ -375,7 +388,7 @@ type ELF64 struct {
 	Header ELF64Ehdr
 
 	// stores same pointers
-	ShdrEntriesMapped map[string]*ELF64Shdr
+	ShdrEntriesMapped map[string]*SectionDump
 	ShdrEntries       []*ELF64Shdr
 
 	PhdrEntries []ELF64Phdr
@@ -388,7 +401,7 @@ func (elf *ELF64) ParseShdr(elfDump []byte) error {
 		return err
 	}
 
-	elf.ShdrEntriesMapped = make(map[string]*ELF64Shdr)
+	elf.ShdrEntriesMapped = make(map[string]*SectionDump)
 
 	entryOffset := elf.Header.ShOff
 
@@ -413,7 +426,13 @@ func (elf *ELF64) ParseShdr(elfDump []byte) error {
 		nullByteNdx := find[byte](elfDump[off+uint64(entry.ShName):], 0)
 		sectionName := string(elfDump[off+uint64(entry.ShName) : off+uint64(entry.ShName)+uint64(nullByteNdx)])
 
-		elf.ShdrEntriesMapped[sectionName] = entry
+		entryData := make([]byte, entry.ShSize)
+		copy(entryData, elfDump[entry.ShOff:entry.ShOff+entry.ShSize])
+		elf.ShdrEntriesMapped[sectionName] = &SectionDump{
+			SectionEntry: entry,
+			Data:         entryData,
+		}
+
 		elf.ShdrEntries = append(elf.ShdrEntries, entry)
 
 		entryOffset += 0x40
@@ -437,10 +456,10 @@ func (elf *ELF64) ParseSymTable(elfDump []byte) error {
 	var strtab *ELF64Shdr
 
 	for sectionName, section := range elf.ShdrEntriesMapped {
-		if section.ShType == SHT_SYMTAB {
-			symtab = section
+		if section.SectionEntry.ShType == SHT_SYMTAB {
+			symtab = section.SectionEntry
 		} else if sectionName == ".strtab" {
-			strtab = section
+			strtab = section.SectionEntry
 		}
 	}
 
