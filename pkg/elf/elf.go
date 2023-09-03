@@ -1,11 +1,14 @@
 package elf
 
 import (
-//"encoding/binary"
-//"errors"
-//"fmt"
-//"os"
-//"reflect"
+	"encoding/binary"
+	"errors"
+	"fmt"
+	"os"
+	"reflect"
+
+	"github.com/acorn-io/baaah/pkg/name"
+	"github.com/andreistan26/golink/pkg/log"
 )
 
 //go:generate stringer -type STT,STB,ElfClass,ElfData,ElfOsAbi,ET,SHT_TYPE,SHT_FLAGS -output elf_string.go
@@ -27,7 +30,7 @@ type ELF64Sym struct {
 	// section header index
 	StShNdx uint16
 
-	// section offset
+	// offset within the section refered to StShNdx
 	StValue uint64
 
 	// object size
@@ -117,6 +120,16 @@ func (ehdr ELF64Ehdr) String() string {
 		ehdr.PhEntSize, ehdr.PhNum, ehdr.ShEntSize,
 		ehdr.ShNum, ehdr.ShStrNdx,
 	)
+}
+
+func (entry ELF64Shdr) StringFlag() string {
+	str := ""
+	for i := uint64(1); i <= uint64(SHF_MASKPROC); i = i << 1 {
+		if i&uint64(entry.ShFlags) != 0 {
+			str = fmt.Sprintf("%s%v", str, SHT_FLAGS(i))
+		}
+	}
+	return str
 }
 
 const (
@@ -379,6 +392,8 @@ type NamedSymbol struct {
 type SectionDump struct {
 	SectionEntry *ELF64Shdr
 	Data         []byte
+	Symbols      []*NamedSymbol
+	Name         string
 }
 
 type ELF64 struct {
@@ -389,7 +404,7 @@ type ELF64 struct {
 
 	// stores same pointers
 	ShdrEntriesMapped map[string]*SectionDump
-	ShdrEntries       []*ELF64Shdr
+	ShdrEntries       []*SectionDump
 
 	PhdrEntries []ELF64Phdr
 
@@ -428,12 +443,17 @@ func (elf *ELF64) ParseShdr(elfDump []byte) error {
 
 		entryData := make([]byte, entry.ShSize)
 		copy(entryData, elfDump[entry.ShOff:entry.ShOff+entry.ShSize])
-		elf.ShdrEntriesMapped[sectionName] = &SectionDump{
+		sectionDump := &SectionDump{
 			SectionEntry: entry,
 			Data:         entryData,
+			Symbols:      []*NamedSymbol{},
+			Name:         sectionName,
 		}
 
-		elf.ShdrEntries = append(elf.ShdrEntries, entry)
+		elf.ShdrEntriesMapped[sectionName] = sectionDump
+		elf.ShdrEntries = append(elf.ShdrEntries, sectionDump)
+
+		log.Debugf("%s: %s\n", sectionName, entry.StringFlag())
 
 		entryOffset += 0x40
 	}
@@ -485,23 +505,24 @@ func (elf *ELF64) ParseSymTable(elfDump []byte) error {
 		// search for the nullbyte
 		nullByteNdx := find[byte](elfDump[strtab.ShOff+uint64(symbol.StName):], 0)
 
+		namedSymbol := &NamedSymbol{
+			Sym:  &symbol,
+			Name: "",
+		}
+
 		if nullByteNdx == -1 {
 			elf.Symbols = append(
-				elf.Symbols,
-				&NamedSymbol{
-					Sym:  &symbol,
-					Name: "",
-				},
+				elf.Symbols, namedSymbol,
 			)
 		} else {
+			namedSymbol.Name = string(elfDump[strtab.ShOff+uint64(symbol.StName) : uint64(strtab.ShOff)+uint64(symbol.StName)+uint64(nullByteNdx)])
 			elf.Symbols = append(
 				elf.Symbols,
-				&NamedSymbol{
-					Sym:  &symbol,
-					Name: string(elfDump[strtab.ShOff+uint64(symbol.StName) : uint64(strtab.ShOff)+uint64(symbol.StName)+uint64(nullByteNdx)]),
-				},
+				namedSymbol,
 			)
 		}
+
+		elf.ShdrEntries[symbol.StShNdx].Symbols = append(elf.ShdrEntries[symbol.StShNdx].Symbols, namedSymbol)
 	}
 
 	return nil

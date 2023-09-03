@@ -144,3 +144,5 @@ func TestELF64SymbolTable(t *testing.T) {
 		}
 	}
 }
+
+// TODO add test for section header entry -> symbols defined within the section
