@@ -61,6 +61,12 @@ func Link(inputs LinkerInputs) (*elf.ELF64, error) {
 
 	linker.fillSectionDefinedSymbols()
 
+	for _, inputElf := range linker.Elfs {
+		linker.MergeElf(inputElf)
+	}
+
+	linker.UpdateMergedExecutable()
+
 	return nil, nil
 }
 

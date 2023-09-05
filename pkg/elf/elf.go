@@ -393,7 +393,7 @@ type SectionDump struct {
 	Data         []byte
 	Symbols      []*NamedSymbol
 	Name         string
-	Index        int
+	//Index        int
 }
 
 type ELF64 struct {
@@ -448,7 +448,7 @@ func (elf *ELF64) ParseShdr(elfDump []byte) error {
 			Data:         entryData,
 			Symbols:      []*NamedSymbol{},
 			Name:         sectionName,
-			Index:        int(entryNdx),
+			//Index:        int(entryNdx),
 		}
 
 		elf.ShdrEntriesMapped[sectionName] = sectionDump
