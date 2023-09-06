@@ -18,13 +18,12 @@ type LinkerInputs struct {
 }
 
 type ConnectedSymbol struct {
-	Symbol *elf.NamedSymbol
+	Symbol *elf.Symbol
 	Elf    *elf.ELF64
 }
 
 type SymbolRouter struct {
-	// pointers to all appearances of this symbol
-	RelatedSymbols []*ConnectedSymbol
+	SymbolType uint32
 
 	// pointer to the definition of the symbol
 	DefinedSymbol *ConnectedSymbol
@@ -34,7 +33,7 @@ type Linker struct {
 	LinkerInputs LinkerInputs
 	Elfs         []*elf.ELF64
 
-	Executable *elf.ELF64
+	Executable elf.ELF64
 	// We index symbols by name and we need
 	// multiple (at least 2) symbols to define
 	Symbols               map[string]*SymbolRouter
@@ -97,9 +96,9 @@ func Contains[T comparable](needle T, haystack []T) bool {
 	return false
 }
 
-func (linker *Linker) UpdateSymbol(namedSymbol *elf.NamedSymbol, objFile *elf.ELF64) error {
+func (linker *Linker) UpdateSymbol(namedSymbol *elf.Symbol, objFile *elf.ELF64) error {
 	// We skip symbols that dont matter to resolution
-	if !Contains(namedSymbol.Sym.GetType(), []elf.STT{elf.STT_NOTYPE, elf.STT_FUNC, elf.STT_OBJECT}) ||
+	if !Contains(namedSymbol.BaseSymbol.GetType(), []elf.STT{elf.STT_NOTYPE, elf.STT_FUNC, elf.STT_OBJECT}) ||
 		namedSymbol.Name == "" {
 		return nil
 	}
@@ -115,16 +114,15 @@ func (linker *Linker) UpdateSymbol(namedSymbol *elf.NamedSymbol, objFile *elf.EL
 	if !found {
 		// add a new entry into symbol hashtable
 		router = &SymbolRouter{
-			RelatedSymbols: []*ConnectedSymbol{},
-			DefinedSymbol:  nil,
+			SymbolType:    SYM_UNDEF,
+			DefinedSymbol: nil,
 		}
 
 		linker.Symbols[namedSymbol.Name] = router
 	}
 
 	if router.DefinedSymbol == nil {
-		router.RelatedSymbols = append(router.RelatedSymbols, entry)
-		if entry.Symbol.Sym.GetType() != elf.STT_NOTYPE {
+		if entry.Symbol.BaseSymbol.GetType() != elf.STT_NOTYPE {
 			router.DefinedSymbol = entry
 			delete(linker.UndefinedSymbols, namedSymbol.Name)
 			log.Debugf("Added as defined symbol")
@@ -134,11 +132,10 @@ func (linker *Linker) UpdateSymbol(namedSymbol *elf.NamedSymbol, objFile *elf.EL
 		return nil
 	} else {
 		log.Debugf("This entry has a defined symbol")
-		if entry.Symbol.Sym.GetType() != elf.STT_NOTYPE {
-			if router.DefinedSymbol.Symbol.Sym.GetBinding() == elf.STB_WEAK {
+		if entry.Symbol.BaseSymbol.GetType() != elf.STT_NOTYPE {
+			if router.DefinedSymbol.Symbol.BaseSymbol.GetBinding() == elf.STB_WEAK {
 				// TODO remove the previous defined symbol from the list as it is a weak and we found a strong
 				router.DefinedSymbol.Symbol = entry.Symbol
-				router.RelatedSymbols = append(router.RelatedSymbols, entry)
 			} else {
 				return errors.New("Two strong symbols with same name.")
 			}
@@ -146,7 +143,6 @@ func (linker *Linker) UpdateSymbol(namedSymbol *elf.NamedSymbol, objFile *elf.EL
 			// update reference(entry) with the found definition
 			log.Debugf("Found a definition: %v for the reference %v", router.DefinedSymbol.Symbol,
 				entry.Symbol)
-			router.RelatedSymbols = append(router.RelatedSymbols, entry)
 			return nil
 		}
 	}
@@ -157,7 +153,7 @@ func (linker *Linker) UpdateSymbol(namedSymbol *elf.NamedSymbol, objFile *elf.EL
 func (linker *Linker) fillSectionDefinedSymbols() {
 	for _, router := range linker.Symbols {
 		definedSymbol := router.DefinedSymbol
-		definedSymbolSection := definedSymbol.Elf.ShdrEntries[definedSymbol.Symbol.Sym.StShNdx]
+		definedSymbolSection := definedSymbol.Elf.Sections[definedSymbol.Symbol.BaseSymbol.StShNdx]
 		linker.addSectionDefinedSymbol(definedSymbol, definedSymbolSection.SectionEntry)
 	}
 }
