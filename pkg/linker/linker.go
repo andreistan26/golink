@@ -29,11 +29,16 @@ type SymbolRouter struct {
 	DefinedSymbol *ConnectedSymbol
 }
 
+type OutputELF struct {
+	elf.ELF64
+	MappedSections map[string]*elf.Section
+}
+
 type Linker struct {
 	LinkerInputs LinkerInputs
-	Elfs         []*elf.ELF64
+	InputObjects []*elf.ELF64
 
-	Executable elf.ELF64
+	Executable OutputELF
 	// We index symbols by name and we need
 	// multiple (at least 2) symbols to define
 	Symbols               map[string]*SymbolRouter
@@ -46,7 +51,8 @@ type Linker struct {
 func Link(inputs LinkerInputs) (*elf.ELF64, error) {
 	linker := &Linker{
 		LinkerInputs:          inputs,
-		Elfs:                  []*elf.ELF64{},
+		InputObjects:          []*elf.ELF64{},
+		Executable:            OutputELF{MappedSections: make(map[string]*elf.Section)},
 		Symbols:               make(map[string]*SymbolRouter),
 		UndefinedSymbols:      make(map[string]struct{}),
 		SectionDefinedSymbols: make(map[*elf.ELF64Shdr][]*ConnectedSymbol),
@@ -60,7 +66,7 @@ func Link(inputs LinkerInputs) (*elf.ELF64, error) {
 
 	linker.fillSectionDefinedSymbols()
 
-	for _, inputElf := range linker.Elfs {
+	for _, inputElf := range linker.InputObjects {
 		linker.MergeElf(inputElf)
 	}
 

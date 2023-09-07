@@ -419,6 +419,11 @@ type ELF64 struct {
 	Sections []*Section
 }
 
+type ExecutableElf struct {
+	BaseElf        ELF64
+	MappedSections map[string]*Section
+}
+
 func (elf *ELF64) ParseShdr(elfDump []byte) error {
 	if err := elf.Header.checkParsed(); err != nil {
 		return err
