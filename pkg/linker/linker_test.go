@@ -138,10 +138,17 @@ func TestLinkerMergeSections(t *testing.T) {
 	}
 
 	shdrStrSection := l.Executable.MappedSections[".shstrtab"]
+	strtab := l.Executable.MappedSections[".strtab"]
 
 	// Verify section names
 	for _, section := range l.Executable.Sections {
 		sectionName := helpers.GetString(shdrStrSection.Data[section.SectionEntry.ShName:])
 		assert.Truef(t, sectionName == section.Name, "Section name is not correct in section string table: got=%s want=%s", sectionName, section.Name)
+	}
+
+	// Verify symbol names
+	for _, symbol := range l.Executable.Symbols {
+		symbolName := helpers.GetString(strtab.Data[symbol.BaseSymbol.StName:])
+		assert.Truef(t, symbolName == symbol.Name, "Symbol name is not correct in symbol string table: got=%s want=%s", symbol, symbol.Name)
 	}
 }

@@ -9,7 +9,7 @@ func String2Bytes(str string) []byte {
 }
 
 // Find item in slice and return it's index, if none found return -1
-func Find[T comparable](needle T, haystack []T) int {
+func Find[T comparable](haystack []T, needle T) int {
 	for i, v := range haystack {
 		if v == needle {
 			return i

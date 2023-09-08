@@ -92,6 +92,7 @@ func TestELF64SectionTable(t *testing.T) {
 		t.Errorf("Error when parsing Section header")
 	}
 
+	assert.True(t, elf.Header.ShNum == uint16(len(elf.Sections)), "Header section number is not equal to lenght of sections")
 	assert.True(t, findSectionByName(".text", elf) != nil, "Second section should be .data")
 	assert.True(t, findSectionByName(".data", elf).SectionEntry.ShType == SHT_PROGBITS, "8th section should be of type RELA")
 	assert.True(t, findSectionByName(".rela.eh_frame", elf).SectionEntry.ShSize == 0x18, "8th section should have size 0x18")
@@ -195,7 +196,26 @@ func TestSymbolsBySection(t *testing.T) {
 			assert.True(t, equalSym(sym, symWant), fmt.Sprintf("symbol %s", sym.Name))
 		}
 	}
+}
 
+func TestRelocationsParsing(t *testing.T) {
+	filename := "../../data/sample_relocatable_symbols.o"
+
+	elf, err := NewELF(filename)
+	if err != nil {
+		t.Errorf(err.Error())
+	}
+
+	refRelocationCount := 5
+
+	textSections := findSectionByName(".text", elf)
+
+	assert.Truef(t, len(textSections.Relocations) == refRelocationCount,
+		"wrong relocation count for .text got=%d, wanted=%d", len(textSections.Relocations), refRelocationCount)
+
+	for _, rel := range textSections.Relocations {
+		t.Logf("%v\n", rel.SymbolName)
+	}
 }
 
 func findSectionByName(name string, elf *ELF64) *Section {

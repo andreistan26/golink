@@ -7,7 +7,9 @@ import (
 	"os"
 	"reflect"
 
+	"github.com/andreistan26/golink/pkg/helpers"
 	"github.com/andreistan26/golink/pkg/log"
+	//"github.com/andreistan26/golink/pkg/log"
 )
 
 //go:generate stringer -type STT,STB,ElfClass,ElfData,ElfOsAbi,ET,SHT_TYPE,SHT_FLAGS -output elf_string.go
@@ -197,7 +199,7 @@ type ELF64Sym struct {
 }
 
 func (sym *ELF64Sym) IsSpecialSection() bool {
-	return find[uint16]([]uint16{SHN_ABS, SHN_COMMON, SHN_LORESERVE, SHN_XINDEX}, sym.StShNdx) != -1
+	return helpers.Find[uint16]([]uint16{SHN_ABS, SHN_COMMON, SHN_LORESERVE, SHN_XINDEX}, sym.StShNdx) != -1
 }
 
 func (sym ELF64Sym) String() string {
@@ -370,13 +372,17 @@ func (elf64Ehdr *ELF64Ehdr) GetABIVersion() (uint32, error) {
 
 // Section header entries
 type ELF64Shdr struct {
-	ShName      uint32    // offset to the section name relative to section name table
-	ShType      SHT_TYPE  // section type
-	ShFlags     SHT_FLAGS //
-	ShAddr      uint64
-	ShOff       uint64
-	ShSize      uint64
-	ShLink      uint32
+	ShName  uint32    // offset to the section name relative to section name table
+	ShType  SHT_TYPE  // section type
+	ShFlags SHT_FLAGS //
+	ShAddr  uint64
+	ShOff   uint64
+	ShSize  uint64
+	// SHT_REL / SHT_RELA -> Symbol table referenced by relocations
+	ShLink uint32
+
+	// SHT_REL / SHT_RELA -> section index to which the relocations apply
+	// SHT_DYNSYM / SHT_SYMTAB -> index of first non-local symbol
 	ShInfo      uint32
 	ShAddrAlign uint64
 	ShEntSize   uint64
@@ -392,15 +398,20 @@ func (entry ELF64Shdr) StringFlag() string {
 	return str
 }
 
-type ELF64Rel struct {
-	Offset uint64
-	Info   uint64
+type Relocation struct {
+	Offset     uint64
+	Info       uint64
+	Addend     uint64
+	isRela     bool
+	SymbolName string
 }
 
-type ELF64Rela struct {
-	Offset uint64
-	Info   uint64
-	Addend uint64
+func (relocation Relocation) GetSym() uint32 {
+	return uint32(relocation.Info >> 32)
+}
+
+func (relocation Relocation) GetType() uint32 {
+	return uint32(relocation.Info & 0xFFFFFFFF)
 }
 
 type ELF64Phdr struct {
@@ -423,6 +434,7 @@ type Section struct {
 	SectionEntry *ELF64Shdr
 	Data         []byte
 	Symbols      []*Symbol
+	Relocations  []*Relocation
 	Name         string
 }
 
@@ -449,7 +461,7 @@ func (elf *ELF64) ParseShdr(elfDump []byte) error {
 	off := binary.LittleEndian.Uint64(elfDump[strTabEntOff+0x18 : strTabEntOff+0x20])
 
 	// The first section is always null
-	for entryNdx := uint16(0); entryNdx <= elf.Header.ShNum; entryNdx++ {
+	for entryNdx := uint16(0); entryNdx < elf.Header.ShNum; entryNdx++ {
 		entry := &ELF64Shdr{}
 		entry.ShName = binary.LittleEndian.Uint32(elfDump[entryOffset : entryOffset+4])
 		entry.ShType = SHT_TYPE(binary.LittleEndian.Uint32(elfDump[entryOffset+0x04 : entryOffset+0x08]))
@@ -462,19 +474,18 @@ func (elf *ELF64) ParseShdr(elfDump []byte) error {
 		entry.ShAddrAlign = binary.LittleEndian.Uint64(elfDump[entryOffset+0x30 : entryOffset+0x38])
 		entry.ShEntSize = binary.LittleEndian.Uint64(elfDump[entryOffset+0x38 : entryOffset+0x40])
 
-		nullByteNdx := find[byte](elfDump[off+uint64(entry.ShName):], 0)
-		sectionName := string(elfDump[off+uint64(entry.ShName) : off+uint64(entry.ShName)+uint64(nullByteNdx)])
+		sectionName := helpers.GetString(elfDump[off+uint64(entry.ShName):])
 
 		entryData := make([]byte, entry.ShSize)
 		copy(entryData, elfDump[entry.ShOff:entry.ShOff+entry.ShSize])
-		sectionDump := &Section{
+		section := &Section{
 			SectionEntry: entry,
 			Data:         entryData,
 			Symbols:      []*Symbol{},
 			Name:         sectionName,
 		}
 
-		elf.Sections = append(elf.Sections, sectionDump)
+		elf.Sections = append(elf.Sections, section)
 
 		log.Debugf("%s: %s\n", sectionName, entry.StringFlag())
 
@@ -482,16 +493,6 @@ func (elf *ELF64) ParseShdr(elfDump []byte) error {
 	}
 
 	return nil
-}
-
-func find[T comparable](s []T, x T) int {
-	for ndx, val := range s {
-		if x == val {
-			return ndx
-		}
-	}
-
-	return -1
 }
 
 func (sym *Symbol) IsLocal() bool {
@@ -531,12 +532,7 @@ func (elf *ELF64) ParseSymTable(elfDump []byte) error {
 			StSize:  binary.LittleEndian.Uint64(elfDump[offset+0x10 : offset+0x18]),
 		}
 
-		// search for the nullbyte
-		nullByteNdx := find[byte](elfDump[strtab.ShOff+uint64(symbol.BaseSymbol.StName):], 0)
-
-		if nullByteNdx != -1 {
-			symbol.Name = string(elfDump[strtab.ShOff+uint64(symbol.BaseSymbol.StName) : uint64(strtab.ShOff)+uint64(symbol.BaseSymbol.StName)+uint64(nullByteNdx)])
-		}
+		symbol.Name = helpers.GetString(elfDump[strtab.ShOff+uint64(symbol.BaseSymbol.StName):])
 
 		if !symbol.BaseSymbol.IsSpecialSection() {
 			elf.Sections[symbol.BaseSymbol.StShNdx].Symbols = append(elf.Sections[symbol.BaseSymbol.StShNdx].Symbols, symbol)
@@ -545,6 +541,37 @@ func (elf *ELF64) ParseSymTable(elfDump []byte) error {
 	}
 
 	return nil
+}
+
+func (elf *ELF64) ParseRelocations() {
+	// Get all relocation tables
+	for _, relSection := range elf.Sections {
+		if !(relSection.SectionEntry.ShType == SHT_REL || relSection.SectionEntry.ShType == SHT_RELA) {
+			continue
+		}
+
+		isRela := relSection.SectionEntry.ShType == SHT_RELA
+		refSection := elf.Sections[relSection.SectionEntry.ShInfo]
+		relEntSize := uint64(0x10)
+		if isRela {
+			relEntSize = 0x18
+		}
+
+		for relEntOff := uint64(0); relEntOff < relSection.SectionEntry.ShSize; relEntOff += relEntSize {
+
+			currentEnt := &Relocation{
+				Offset: binary.LittleEndian.Uint64(relSection.Data[relEntOff : relEntOff+0x8]),
+				Info:   binary.LittleEndian.Uint64(relSection.Data[relEntOff+0x8 : relEntOff+0x10]),
+			}
+
+			if isRela {
+				currentEnt.Addend = binary.LittleEndian.Uint64(relSection.Data[relEntOff+0x10 : relEntOff+0x18])
+			}
+
+			currentEnt.SymbolName = elf.Symbols[currentEnt.GetSym()].Name
+			refSection.Relocations = append(refSection.Relocations, currentEnt)
+		}
+	}
 }
 
 func (sym ELF64Sym) GetType() STT {
@@ -589,6 +616,8 @@ func NewELF(filepath string) (*ELF64, error) {
 	if err != nil {
 		return nil, err
 	}
+
+	elf.ParseRelocations()
 
 	return elf, nil
 }
