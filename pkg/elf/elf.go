@@ -258,6 +258,24 @@ func (ehdr ELF64Ehdr) String() string {
 	)
 }
 
+func (shdr ELF64Shdr) String() string {
+	return fmt.Sprintf(
+		"Addr:      %v\n"+
+			"AddrAlign: %v\n"+
+			"EntSize:   %v\n"+
+			"Flags:     %v\n"+
+			"Info:      %v\n"+
+			"Link:      %v\n"+
+			"Name:      %v\n"+
+			"Off:       %v\n"+
+			"Size:      %v\n"+
+			"Type:      %v\n",
+		shdr.ShAddr, shdr.ShAddrAlign, shdr.ShEntSize,
+		shdr.ShFlags, shdr.ShInfo, shdr.ShLink,
+		shdr.ShName, shdr.ShOff, shdr.ShSize, shdr.ShType,
+	)
+}
+
 func (elf64Ehdr *ELF64Ehdr) VerifyMagic() error {
 	if !reflect.DeepEqual(elf64Ehdr.Ident[EI_MAG0:EI_CLASS], []byte{'\x7f', 'E', 'L', 'F'}) {
 		return InvalidMagicErr

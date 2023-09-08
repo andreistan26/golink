@@ -62,14 +62,7 @@ func NewLinker(inputs LinkerInputs) *Linker {
 }
 
 func Link(inputs LinkerInputs) error {
-	linker := &Linker{
-		LinkerInputs:          inputs,
-		InputObjects:          []*elf.ELF64{},
-		Executable:            OutputELF{MappedSections: make(map[string]*elf.Section)},
-		Symbols:               make(map[string]*SymbolRouter),
-		UndefinedSymbols:      make(map[string]struct{}),
-		SectionDefinedSymbols: make(map[*elf.ELF64Shdr][]*ConnectedSymbol),
-	}
+	linker := NewLinker(inputs)
 
 	log.Debugf("Linker input files received %v", inputs.Filenames)
 
@@ -92,6 +85,8 @@ func (linker *Linker) NewFile(filepath string) error {
 	if err != nil {
 		return err
 	}
+
+	linker.InputObjects = append(linker.InputObjects, objFile)
 
 	// Now update symbol hashtable with symbols
 	for _, sym := range objFile.Symbols {
@@ -177,10 +172,10 @@ func (linker *Linker) fillSectionDefinedSymbols() {
 }
 
 func (linker *Linker) addSectionDefinedSymbol(symbol *ConnectedSymbol, section *elf.ELF64Shdr) {
-	symbols, found := linker.SectionDefinedSymbols[section]
+	_, found := linker.SectionDefinedSymbols[section]
 	if !found {
 		linker.SectionDefinedSymbols[section] = []*ConnectedSymbol{symbol}
 	} else {
-		symbols = append(symbols, symbol)
+		linker.SectionDefinedSymbols[section] = append(linker.SectionDefinedSymbols[section], symbol)
 	}
 }

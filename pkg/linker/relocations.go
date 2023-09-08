@@ -5,6 +5,7 @@ import (
 	"strings"
 
 	"github.com/andreistan26/golink/pkg/elf"
+	"github.com/andreistan26/golink/pkg/helpers"
 	"github.com/andreistan26/golink/pkg/log"
 )
 
@@ -19,7 +20,7 @@ type MergeUnit struct {
 // they reference the output section header
 func (linker *Linker) MergeElf(target *elf.ELF64) error {
 	mergeableNames := []string{
-		"", ".text", ".data", ".bss", ".strtab", ".rodata", ".symtab", ".shstrtab",
+		"", ".text", ".data", ".bss", ".strtab", ".rodata", ".shstrtab",
 	}
 
 	for _, section := range target.Sections {
@@ -28,7 +29,9 @@ func (linker *Linker) MergeElf(target *elf.ELF64) error {
 				Section:   section,
 				SourceELF: target,
 			})
-			log.Errorf(err.Error())
+			if err != nil {
+				log.Errorf(err.Error())
+			}
 		} else {
 			log.Debugf("Section was skipped because it's name was not in the mergeableNames: %s", section.Name)
 		}
@@ -36,13 +39,6 @@ func (linker *Linker) MergeElf(target *elf.ELF64) error {
 
 	return nil
 }
-
-/*
-To Update:
-    target.Section.SectionEntry.ShName
-    target.Section.SectionEntry.ShOff
-    target.
-*/
 
 func (linker *Linker) mergeUnit(target *MergeUnit) error {
 	outputSection, isNewSection := linker.Executable.MappedSections[target.Section.Name]
@@ -108,12 +104,12 @@ func (linker *Linker) UpdateMergedExecutable() error {
 	shstrtab := linker.Executable.Sections[linker.Executable.Header.ShStrNdx]
 	for idx, section := range linker.Executable.Sections {
 		// add current section to the section string table
-		shstrtab.Data = append(linker.Executable.Sections[linker.Executable.Header.ShStrNdx].Data, []byte(section.Name)...)
-
+		section.SectionEntry.ShName = uint32(len(shstrtab.Data))
+		shstrtab.Data = append(shstrtab.Data, helpers.String2Bytes(section.Name)...)
 		// update this sections symbols
 		for _, sym := range section.Symbols {
 			sym.BaseSymbol.StName = uint32(len(strtab.Data))
-			strtab.Data = append(strtab.Data, []byte(sym.Name)...)
+			strtab.Data = append(strtab.Data, helpers.String2Bytes(sym.Name)...)
 			sym.BaseSymbol.StShNdx = uint16(idx)
 		}
 	}
