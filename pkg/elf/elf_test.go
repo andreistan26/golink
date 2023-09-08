@@ -1,6 +1,7 @@
 package elf
 
 import (
+	"fmt"
 	"os"
 	"reflect"
 	"testing"
@@ -79,7 +80,7 @@ func TestELF64SectionTable(t *testing.T) {
 		t.Errorf("%v", err)
 	}
 
-	elf := ELF64{}
+	elf := &ELF64{}
 
 	err = elf.Header.Parse(objFileData)
 	if err != nil {
@@ -91,18 +92,9 @@ func TestELF64SectionTable(t *testing.T) {
 		t.Errorf("Error when parsing Section header")
 	}
 
-	findSectionByName := func(name string) *Section {
-		for _, section := range elf.Sections {
-			if section.Name == name {
-				return section
-			}
-		}
-		return nil
-	}
-
-	assert.True(t, findSectionByName(".text") != nil, "Second section should be .data")
-	assert.True(t, findSectionByName(".data").SectionEntry.ShType == SHT_PROGBITS, "8th section should be of type RELA")
-	assert.True(t, findSectionByName(".rela.eh_frame").SectionEntry.ShSize == 0x18, "8th section should have size 0x18")
+	assert.True(t, findSectionByName(".text", elf) != nil, "Second section should be .data")
+	assert.True(t, findSectionByName(".data", elf).SectionEntry.ShType == SHT_PROGBITS, "8th section should be of type RELA")
+	assert.True(t, findSectionByName(".rela.eh_frame", elf).SectionEntry.ShSize == 0x18, "8th section should have size 0x18")
 }
 
 func TestELF64SymbolTable(t *testing.T) {
@@ -152,4 +144,65 @@ func TestELF64SymbolTable(t *testing.T) {
 	}
 }
 
-// TODO add test for section header entry -> symbols defined within the section
+func TestSymbolsBySection(t *testing.T) {
+	filename := "../../data/sample_relocatable_symbols_defs.o"
+
+	elf, err := NewELF(filename)
+	if err != nil {
+		t.Errorf(err.Error())
+	}
+
+	textSection := findSectionByName(".text", elf)
+
+	refSymbols := make(map[string]*Symbol)
+
+	refSymbols[".text"] = &Symbol{
+		BaseSymbol: &ELF64Sym{
+			StShNdx: 1,
+			StValue: 0,
+			StSize:  0,
+		},
+		Name: ".text",
+	}
+	refSymbols["bar_i"] = &Symbol{
+		BaseSymbol: &ELF64Sym{
+			StShNdx: 1,
+			StValue: 0,
+			StSize:  14,
+		},
+		Name: "bar_i",
+	}
+
+	refSymbols["foo_e"] = &Symbol{
+		BaseSymbol: &ELF64Sym{
+			StShNdx: 1,
+			StValue: 0xe,
+			StSize:  11,
+		},
+		Name: "foo_e",
+	}
+
+	equalSym := func(got, want *Symbol) bool {
+		return got.Name == want.Name &&
+			got.BaseSymbol.StSize == want.BaseSymbol.StSize &&
+			got.BaseSymbol.StShNdx == want.BaseSymbol.StShNdx &&
+			got.BaseSymbol.StValue == want.BaseSymbol.StValue
+	}
+
+	for _, sym := range textSection.Symbols {
+		symWant, found := refSymbols[sym.Name]
+		if found {
+			assert.True(t, equalSym(sym, symWant), fmt.Sprintf("symbol %s", sym.Name))
+		}
+	}
+
+}
+
+func findSectionByName(name string, elf *ELF64) *Section {
+	for _, section := range elf.Sections {
+		if section.Name == name {
+			return section
+		}
+	}
+	return nil
+}

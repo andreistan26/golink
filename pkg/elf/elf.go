@@ -419,11 +419,6 @@ type ELF64 struct {
 	Sections []*Section
 }
 
-type ExecutableElf struct {
-	BaseElf        ELF64
-	MappedSections map[string]*Section
-}
-
 func (elf *ELF64) ParseShdr(elfDump []byte) error {
 	if err := elf.Header.checkParsed(); err != nil {
 		return err
@@ -481,6 +476,10 @@ func find[T comparable](s []T, x T) int {
 	return -1
 }
 
+func (sym *Symbol) IsLocal() bool {
+	return sym.BaseSymbol.GetBinding() == STB_LOCAL
+}
+
 func (elf *ELF64) ParseSymTable(elfDump []byte) error {
 	var symtab *ELF64Shdr
 	var strtab *ELF64Shdr
@@ -500,10 +499,6 @@ func (elf *ELF64) ParseSymTable(elfDump []byte) error {
 
 	if strtab == nil {
 		return errors.New("No string table found")
-	}
-
-	for _, section := range elf.Sections {
-		fmt.Printf("%v\n", section.SectionEntry)
 	}
 
 	// parse each symbol
@@ -542,7 +537,7 @@ func (sym ELF64Sym) GetBinding() STB {
 	return STB(sym.StInfo&0xf0) >> 4
 }
 
-func New(filepath string) (*ELF64, error) {
+func NewELF(filepath string) (*ELF64, error) {
 	file, err := os.Open(filepath)
 	if err != nil {
 		return nil, err

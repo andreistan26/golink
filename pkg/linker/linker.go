@@ -48,7 +48,20 @@ type Linker struct {
 	UndefinedSymbols map[string]struct{}
 }
 
-func Link(inputs LinkerInputs) (*elf.ELF64, error) {
+func NewLinker(inputs LinkerInputs) *Linker {
+	linker := &Linker{
+		LinkerInputs:          inputs,
+		InputObjects:          []*elf.ELF64{},
+		Executable:            OutputELF{MappedSections: make(map[string]*elf.Section)},
+		Symbols:               make(map[string]*SymbolRouter),
+		UndefinedSymbols:      make(map[string]struct{}),
+		SectionDefinedSymbols: make(map[*elf.ELF64Shdr][]*ConnectedSymbol),
+	}
+
+	return linker
+}
+
+func Link(inputs LinkerInputs) error {
 	linker := &Linker{
 		LinkerInputs:          inputs,
 		InputObjects:          []*elf.ELF64{},
@@ -71,12 +84,11 @@ func Link(inputs LinkerInputs) (*elf.ELF64, error) {
 	}
 
 	linker.UpdateMergedExecutable()
-
-	return nil, nil
+	return nil
 }
 
 func (linker *Linker) NewFile(filepath string) error {
-	objFile, err := elf.New(filepath)
+	objFile, err := elf.NewELF(filepath)
 	if err != nil {
 		return err
 	}

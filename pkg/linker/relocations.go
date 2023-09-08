@@ -2,7 +2,6 @@ package linker
 
 import (
 	"errors"
-	"fmt"
 	"strings"
 
 	"github.com/andreistan26/golink/pkg/elf"
