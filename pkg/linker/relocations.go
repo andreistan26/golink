@@ -65,12 +65,12 @@ func (linker *Linker) mergeUnit(target *MergeUnit) error {
 		// copy data to target
 		if target.Section.Name != ".shstrtab" && target.Section.Name != ".strtab" {
 			outputSection.Data = append(outputSection.Data, target.Section.Data...)
+			linker.updateRelocations(target, outputSection.SectionEntry.ShSize)
 			outputSection.SectionEntry.ShSize += target.Section.SectionEntry.ShSize
 		}
 	}
 
 	linker.mergeSymbols(target, isNewSection)
-
 	return nil
 }
 
@@ -95,6 +95,20 @@ func (linker *Linker) mergeSymbols(target *MergeUnit, isFirstSection bool) {
 		destSection.Symbols = append(destSection.Symbols, definedSymbol.Symbol)
 		linker.Executable.Symbols = append(linker.Executable.Symbols, definedSymbol.Symbol)
 	}
+}
+
+// TODO test this
+func (linker *Linker) updateRelocations(target *MergeUnit, offset uint64) {
+	if len(target.Section.Relocations) == 0 {
+		return
+	}
+
+	for _, relocation := range target.Section.Relocations {
+		relocation.Offset += offset
+	}
+
+	refSection, _ := linker.Executable.MappedSections[target.Section.Name]
+	refSection.Relocations = append(refSection.Relocations, target.Section.Relocations...)
 }
 
 // This is called right after we have merged all sections into one ex
