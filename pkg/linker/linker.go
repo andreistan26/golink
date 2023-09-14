@@ -2,9 +2,10 @@ package linker
 
 import (
 	"errors"
-	"github.com/andreistan26/golink/pkg/log"
 
 	"github.com/andreistan26/golink/pkg/elf"
+	"github.com/andreistan26/golink/pkg/helpers"
+	"github.com/andreistan26/golink/pkg/log"
 )
 
 const (
@@ -76,7 +77,12 @@ func Link(inputs LinkerInputs) error {
 		linker.MergeElf(inputElf)
 	}
 
+	linker.Executable.SortSections()
+
 	linker.UpdateMergedExecutable()
+
+	linker.fillProgramHeader()
+
 	return nil
 }
 
@@ -99,19 +105,9 @@ func (linker *Linker) NewFile(filepath string) error {
 	return nil
 }
 
-func Contains[T comparable](needle T, haystack []T) bool {
-	for _, el := range haystack {
-		if needle == el {
-			return true
-		}
-	}
-
-	return false
-}
-
 func (linker *Linker) UpdateSymbol(namedSymbol *elf.Symbol, objFile *elf.ELF64) error {
 	// We skip symbols that dont matter to resolution
-	if !Contains(namedSymbol.BaseSymbol.GetType(), []elf.STT{elf.STT_NOTYPE, elf.STT_FUNC, elf.STT_OBJECT}) ||
+	if helpers.Find[elf.STT]([]elf.STT{elf.STT_NOTYPE, elf.STT_FUNC, elf.STT_OBJECT}, namedSymbol.BaseSymbol.GetType()) != -1 ||
 		namedSymbol.Name == "" {
 		return nil
 	}
@@ -178,4 +174,45 @@ func (linker *Linker) addSectionDefinedSymbol(symbol *ConnectedSymbol, section *
 	} else {
 		linker.SectionDefinedSymbols[section] = append(linker.SectionDefinedSymbols[section], symbol)
 	}
+}
+
+func (linker *Linker) fillProgramHeader() {
+	// find data segment offset
+	writableNdx := helpers.FindIf[*elf.Section](linker.Executable.Sections, func(section *elf.Section) bool {
+		return section.SectionEntry.IsWritable()
+	})
+
+	writableOff := linker.Executable.Sections[writableNdx].SectionEntry.ShOff
+
+	rxSegSize := 0
+	for i := 0; i < writableNdx; i++ {
+		rxSegSize += int(linker.Executable.Sections[i].SectionEntry.ShSize)
+	}
+
+	linker.Executable.PhdrEntries = append(linker.Executable.PhdrEntries, elf.ELF64Phdr{
+		Type:   elf.PT_LOAD,
+		Flags:  elf.PF_R | elf.PF_X,
+		Offset: linker.Executable.Sections[0].SectionEntry.ShOff,
+		Vaddr:  0x400000 + linker.Executable.Sections[0].SectionEntry.ShOff,
+		Paddr:  0x400000 + linker.Executable.Sections[0].SectionEntry.ShOff,
+		FileSz: uint64(rxSegSize),
+		MemSz:  uint64(rxSegSize),
+		Align:  0x1000, // change pls
+	})
+
+	rwSegSize := 0
+	for i := 0; i < writableNdx; i++ {
+		rwSegSize += int(linker.Executable.Sections[i].SectionEntry.ShSize)
+	}
+
+	linker.Executable.PhdrEntries = append(linker.Executable.PhdrEntries, elf.ELF64Phdr{
+		Type:   elf.PT_LOAD,
+		Flags:  elf.PF_R | elf.PF_W,
+		Offset: linker.Executable.Sections[writableOff].SectionEntry.ShOff,
+		Vaddr:  0x400000 + linker.Executable.Sections[writableOff].SectionEntry.ShOff,
+		Paddr:  0x400000 + linker.Executable.Sections[writableOff].SectionEntry.ShOff,
+		FileSz: uint64(rwSegSize),
+		MemSz:  uint64(rwSegSize),
+		Align:  0x1000, // change pls
+	})
 }
