@@ -127,7 +127,7 @@ func TestLinkerMergeSections(t *testing.T) {
 	// Check if C symbols are all defined and by sections
 	for _, sym := range l.Executable.Symbols {
 		t.Logf("Verifying symbol sets izomophic proprety(all syms and by section) of %s\n", sym.Name)
-		assert.Truef(t, Contains[*elf.Symbol](sym, l.Executable.Sections[sym.BaseSymbol.StShNdx].Symbols),
+		assert.Truef(t, helpers.Find[*elf.Symbol](l.Executable.Sections[sym.BaseSymbol.StShNdx].Symbols, sym) != -1,
 			"symbol %s in Executable set of symbol but not in its section's set", sym.Name)
 	}
 
@@ -151,4 +151,13 @@ func TestLinkerMergeSections(t *testing.T) {
 		symbolName := helpers.GetString(strtab.Data[symbol.BaseSymbol.StName:])
 		assert.Truef(t, symbolName == symbol.Name, "Symbol name is not correct in symbol string table: got=%s want=%s", symbol, symbol.Name)
 	}
+}
+
+func TestProgramHeaders(t *testing.T) {
+	filenames := []string{
+		"../../data/sample_relocatable_symbols.o",
+	}
+
+	l, _ := Link(LinkerInputs{Filenames: filenames})
+	l.Executable.PhdrEntries
 }

@@ -29,8 +29,8 @@ func RootCmd() *cobra.Command {
 		Short: "Golink is an ELF linker for x86-64",
 		PersistentPreRunE: func(cmd *cobra.Command, args []string) error {
 			if opts.Debug {
-				slog.SetDefault(slog.New(slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{
-					AddSource: true,
+				slog.SetDefault(slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{
+					AddSource: false,
 					Level:     slog.LevelDebug,
 				})))
 			}

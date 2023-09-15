@@ -15,7 +15,8 @@ const (
 )
 
 type LinkerInputs struct {
-	Filenames []string
+	Filenames      []string
+	ExecutableName string
 }
 
 type ConnectedSymbol struct {
@@ -59,10 +60,16 @@ func NewLinker(inputs LinkerInputs) *Linker {
 		SectionDefinedSymbols: make(map[*elf.ELF64Shdr][]*ConnectedSymbol),
 	}
 
+	if inputs.ExecutableName == "" {
+		inputs.ExecutableName = "a.out"
+	}
+
+	linker.Executable.Filename = inputs.ExecutableName
+
 	return linker
 }
 
-func Link(inputs LinkerInputs) error {
+func Link(inputs LinkerInputs) (*Linker, error) {
 	linker := NewLinker(inputs)
 
 	log.Debugf("Linker input files received %v", inputs.Filenames)
@@ -83,7 +90,16 @@ func Link(inputs LinkerInputs) error {
 
 	linker.fillProgramHeader()
 
-	return nil
+	linker.fillExecutableHeader()
+
+	err := linker.Executable.WriteELF()
+	if err != nil {
+		panic(err)
+	}
+
+	log.Debugf("%s\n", linker.Executable.String())
+
+	return linker, nil
 }
 
 func (linker *Linker) NewFile(filepath string) error {
@@ -107,7 +123,7 @@ func (linker *Linker) NewFile(filepath string) error {
 
 func (linker *Linker) UpdateSymbol(namedSymbol *elf.Symbol, objFile *elf.ELF64) error {
 	// We skip symbols that dont matter to resolution
-	if helpers.Find[elf.STT]([]elf.STT{elf.STT_NOTYPE, elf.STT_FUNC, elf.STT_OBJECT}, namedSymbol.BaseSymbol.GetType()) != -1 ||
+	if helpers.Find[elf.STT]([]elf.STT{elf.STT_NOTYPE, elf.STT_FUNC, elf.STT_OBJECT}, namedSymbol.BaseSymbol.GetType()) == -1 ||
 		namedSymbol.Name == "" {
 		return nil
 	}
@@ -182,8 +198,6 @@ func (linker *Linker) fillProgramHeader() {
 		return section.SectionEntry.IsWritable()
 	})
 
-	writableOff := linker.Executable.Sections[writableNdx].SectionEntry.ShOff
-
 	rxSegSize := 0
 	for i := 0; i < writableNdx; i++ {
 		rxSegSize += int(linker.Executable.Sections[i].SectionEntry.ShSize)
@@ -201,18 +215,48 @@ func (linker *Linker) fillProgramHeader() {
 	})
 
 	rwSegSize := 0
-	for i := 0; i < writableNdx; i++ {
+	for i := writableNdx; i < len(linker.Executable.Sections); i++ {
 		rwSegSize += int(linker.Executable.Sections[i].SectionEntry.ShSize)
 	}
 
 	linker.Executable.PhdrEntries = append(linker.Executable.PhdrEntries, elf.ELF64Phdr{
 		Type:   elf.PT_LOAD,
 		Flags:  elf.PF_R | elf.PF_W,
-		Offset: linker.Executable.Sections[writableOff].SectionEntry.ShOff,
-		Vaddr:  0x400000 + linker.Executable.Sections[writableOff].SectionEntry.ShOff,
-		Paddr:  0x400000 + linker.Executable.Sections[writableOff].SectionEntry.ShOff,
+		Offset: linker.Executable.Sections[writableNdx].SectionEntry.ShOff,
+		Vaddr:  0x400000 + linker.Executable.Sections[writableNdx].SectionEntry.ShOff,
+		Paddr:  0x400000 + linker.Executable.Sections[writableNdx].SectionEntry.ShOff,
 		FileSz: uint64(rwSegSize),
 		MemSz:  uint64(rwSegSize),
 		Align:  0x1000, // change pls
 	})
+
+	linker.Executable.Header.PhNum = 2
+
+	phdrSize := uint64(56*2) + 64
+	// iterate all sections and offset them
+	for _, section := range linker.Executable.Sections {
+		section.SectionEntry.ShOff += phdrSize
+	}
+}
+
+func (linker *Linker) fillExecutableHeader() {
+	linker.Executable.Header.FillIdentExecutable()
+	linker.Executable.Header.Type = elf.ET_EXEC
+	linker.Executable.Header.Machine = 0x3E
+	linker.Executable.Header.Version = 1
+	linker.Executable.Header.EhSize = 0x40
+	linker.Executable.Header.ShEntSize = 0x40
+
+	lastSection := linker.Executable.Sections[len(linker.Executable.Sections)-1]
+	linker.Executable.Header.ShOff = lastSection.SectionEntry.ShOff + lastSection.SectionEntry.ShSize
+	linker.Executable.Header.ShEntSize = 0x40
+
+	linker.Executable.Header.PhOff = 0x40
+	linker.Executable.Header.PhEntSize = 0x38
+
+	for idx, section := range linker.Executable.Sections {
+		if section.Name == ".shstrtab" {
+			linker.Executable.Header.ShStrNdx = uint16(idx)
+		}
+	}
 }

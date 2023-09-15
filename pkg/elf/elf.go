@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"reflect"
+	"sort"
 
 	"github.com/andreistan26/golink/pkg/helpers"
 	"github.com/andreistan26/golink/pkg/log"
@@ -173,6 +174,18 @@ const (
 	PF_MASKPROC = 0xFF000000
 )
 
+// Hopefully the only ones that matter
+const (
+	R_X86_64_NONE     = 0  // none none
+	R_X86_64_64       = 1  // word64 S + A
+	R_X86_64_PC32     = 2  // word32 S + A - P
+	R_X86_64_GOT32    = 3  // word32 G + A
+	R_X86_64_PLT32    = 4  // word32 L + A - P
+	R_X86_64_PC64     = 24 // word64 S + A - P
+	R_X86_64_GOTOFF64 = 25 // word64 S + A - GOT
+	R_X86_64_GOTPC32  = 26 // word32 GOT + A - P
+)
+
 var (
 	InvalidMagicErr = errors.New("Invalid magic in ELF file.")
 	UnparsedELFErr  = errors.New("ELF header was not parsed.")
@@ -242,7 +255,7 @@ func (ehdr ELF64Ehdr) String() string {
 			"Type:      %v\n"+
 			"Machine:   %v\n"+
 			"Version:   %v\n"+
-			"Entry:     %v\n"+
+			"Entry:     0x%x\n"+
 			"PhOff:     %v\n"+
 			"ShOff:     %v\n"+
 			"Flags:     %v\n"+
@@ -263,7 +276,7 @@ func (ehdr ELF64Ehdr) String() string {
 func (shdr ELF64Shdr) String() string {
 	return fmt.Sprintf(
 		"Addr:      %v\n"+
-			"AddrAlign: %v\n"+
+			"AddrAlign: 0x%x\n"+
 			"EntSize:   %v\n"+
 			"Flags:     %v\n"+
 			"Info:      %v\n"+
@@ -275,6 +288,22 @@ func (shdr ELF64Shdr) String() string {
 		shdr.ShAddr, shdr.ShAddrAlign, shdr.ShEntSize,
 		shdr.ShFlags, shdr.ShInfo, shdr.ShLink,
 		shdr.ShName, shdr.ShOff, shdr.ShSize, shdr.ShType,
+	)
+}
+
+func (phdr ELF64Phdr) String() string {
+	return fmt.Sprintf(
+		"Type:      %v\n"+
+			"Flags:     %v\n"+
+			"Offset:    %v\n"+
+			"Vaddr:     0x%x\n"+
+			"Paddr:     0x%x\n"+
+			"Filesz:    %v\n"+
+			"Memsz:     %v\n"+
+			"Align:     0x%x\n",
+		phdr.Type, phdr.Flags, phdr.Offset,
+		phdr.Vaddr, phdr.Paddr, phdr.FileSz,
+		phdr.MemSz, phdr.Align,
 	)
 }
 
@@ -370,6 +399,10 @@ func (elf64Ehdr *ELF64Ehdr) GetABIVersion() (uint32, error) {
 	return uint32(elf64Ehdr.Ident[EI_ABIVERSION]), nil
 }
 
+func (elf64Shdr ELF64Shdr) IsWritable() bool {
+	return (elf64Shdr.ShFlags & SHF_WRITE) != 0
+}
+
 // Section header entries
 type ELF64Shdr struct {
 	ShName  uint32    // offset to the section name relative to section name table
@@ -447,6 +480,16 @@ type ELF64 struct {
 
 	Symbols  []*Symbol
 	Sections []*Section
+}
+
+func (header *ELF64Ehdr) FillIdentExecutable() {
+	copy(header.Ident[EI_MAG0:EI_CLASS], []byte{'\x7f', 'E', 'L', 'F'})
+	header.Ident[EI_CLASS] = byte(ELFCLASS64)
+	header.Ident[EI_DATA] = byte(0x1)
+	header.Ident[EI_VERSION] = 1
+	header.Ident[EI_OSABI] = 0
+	header.Ident[EI_ABIVERSION] = 0
+	copy(header.Ident[EI_PAD:16], make([]byte, 0x7))
 }
 
 func (elf *ELF64) ParseShdr(elfDump []byte) error {
@@ -620,4 +663,121 @@ func NewELF(filepath string) (*ELF64, error) {
 	elf.ParseRelocations()
 
 	return elf, nil
+}
+
+func (elf *ELF64) SortSections() {
+	sort.SliceStable(elf.Sections, func(i, j int) bool {
+		return !elf.Sections[i].SectionEntry.IsWritable() && elf.Sections[j].SectionEntry.IsWritable()
+	})
+}
+
+func (header *ELF64Ehdr) Serialize() []byte {
+	buffer := []byte{}
+	buffer = append(buffer, header.Ident[:]...)
+	buffer = binary.LittleEndian.AppendUint16(buffer, uint16(header.Type))
+	buffer = binary.LittleEndian.AppendUint16(buffer, header.Machine)
+	buffer = binary.LittleEndian.AppendUint32(buffer, header.Version)
+	buffer = binary.LittleEndian.AppendUint64(buffer, header.Entry)
+	buffer = binary.LittleEndian.AppendUint64(buffer, header.PhOff)
+	buffer = binary.LittleEndian.AppendUint64(buffer, header.ShOff)
+	buffer = binary.LittleEndian.AppendUint32(buffer, header.Flags)
+	buffer = binary.LittleEndian.AppendUint16(buffer, header.EhSize)
+	buffer = binary.LittleEndian.AppendUint16(buffer, header.PhEntSize)
+	buffer = binary.LittleEndian.AppendUint16(buffer, header.PhNum)
+	buffer = binary.LittleEndian.AppendUint16(buffer, header.ShEntSize)
+	buffer = binary.LittleEndian.AppendUint16(buffer, header.ShNum)
+	buffer = binary.LittleEndian.AppendUint16(buffer, header.ShStrNdx)
+
+	return buffer
+}
+
+func (phdr *ELF64Phdr) Serialize() []byte {
+	buffer := []byte{}
+	buffer = binary.LittleEndian.AppendUint32(buffer, phdr.Type)
+	buffer = binary.LittleEndian.AppendUint32(buffer, phdr.Flags)
+	buffer = binary.LittleEndian.AppendUint64(buffer, phdr.Offset)
+	buffer = binary.LittleEndian.AppendUint64(buffer, phdr.Vaddr)
+	buffer = binary.LittleEndian.AppendUint64(buffer, phdr.Paddr)
+	buffer = binary.LittleEndian.AppendUint64(buffer, phdr.FileSz)
+	buffer = binary.LittleEndian.AppendUint64(buffer, phdr.MemSz)
+	buffer = binary.LittleEndian.AppendUint64(buffer, phdr.Align)
+
+	return buffer
+}
+
+func (shdr *ELF64Shdr) Serialize() []byte {
+	buffer := []byte{}
+	buffer = binary.LittleEndian.AppendUint32(buffer, shdr.ShName)
+	buffer = binary.LittleEndian.AppendUint32(buffer, uint32(shdr.ShType))
+	buffer = binary.LittleEndian.AppendUint64(buffer, uint64(shdr.ShFlags))
+	buffer = binary.LittleEndian.AppendUint64(buffer, shdr.ShAddr)
+	buffer = binary.LittleEndian.AppendUint64(buffer, shdr.ShOff)
+	buffer = binary.LittleEndian.AppendUint64(buffer, shdr.ShSize)
+	buffer = binary.LittleEndian.AppendUint32(buffer, shdr.ShLink)
+	buffer = binary.LittleEndian.AppendUint32(buffer, shdr.ShInfo)
+	buffer = binary.LittleEndian.AppendUint64(buffer, shdr.ShAddrAlign)
+	buffer = binary.LittleEndian.AppendUint64(buffer, shdr.ShEntSize)
+
+	return buffer
+}
+
+func (elf *ELF64) WriteELF() error {
+	file, err := os.OpenFile(elf.Filename, os.O_WRONLY|os.O_TRUNC, os.FileMode(int(0777)))
+	file, err = os.OpenFile(elf.Filename, os.O_APPEND|os.O_EXCL|os.O_RDWR, os.FileMode(int(0777)))
+	if err != nil {
+		return err
+	}
+
+	// Write header
+	_, err = file.Write(elf.Header.Serialize())
+	if err != nil {
+		log.Errorf("Error when writing serialized header: %v\n", err.Error())
+	}
+
+	// Write Program Header Table
+	for idx, phdr := range elf.PhdrEntries {
+		_, err = file.Write(phdr.Serialize())
+		if err != nil {
+			log.Errorf("Error when writing serialized pheader[%d]: %v\n", idx, err.Error())
+		}
+	}
+
+	// Write Section Entries
+	for idx, section := range elf.Sections {
+		_, err = file.Write(section.Data)
+		if err != nil {
+			log.Errorf("Error when writing data of section[%d]: %v\n", idx, err.Error())
+		}
+	}
+
+	// Write Section Header Table
+	for idx, section := range elf.Sections {
+		_, err = file.Write(section.SectionEntry.Serialize())
+		if err != nil {
+			log.Errorf("Error when writing entry of section[%d]: %v\n", idx, err.Error())
+		}
+	}
+
+	return nil
+}
+
+func (elf *ELF64) String() string {
+	out := fmt.Sprintf(
+		"Header\n"+
+			"%v"+
+			"Program Headers\n",
+		elf.Header.String(),
+	)
+
+	for idx, phdr := range elf.PhdrEntries {
+		out = out + fmt.Sprintf("[%d]\n%v\n", idx, phdr)
+	}
+
+	out = out + "Section headers\n"
+
+	for idx, section := range elf.Sections {
+		out = out + fmt.Sprintf("[%d]\n%v\n", idx, section.SectionEntry.String())
+	}
+
+	return out
 }

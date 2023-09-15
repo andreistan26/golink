@@ -24,7 +24,7 @@ func (linker *Linker) MergeElf(target *elf.ELF64) error {
 	}
 
 	for _, section := range target.Sections {
-		if Contains(section.Name, mergeableNames) == true || strings.Index(section.Name, ".rel") == 0 {
+		if helpers.Find[string](mergeableNames, section.Name) != -1 || strings.Index(section.Name, ".rel") == 0 {
 			err := linker.mergeUnit(&MergeUnit{
 				Section:   section,
 				SourceELF: target,
@@ -41,8 +41,8 @@ func (linker *Linker) MergeElf(target *elf.ELF64) error {
 }
 
 func (linker *Linker) mergeUnit(target *MergeUnit) error {
-	outputSection, isNewSection := linker.Executable.MappedSections[target.Section.Name]
-	if !isNewSection {
+	outputSection, found := linker.Executable.MappedSections[target.Section.Name]
+	if !found {
 		// update section header entry
 		linker.Executable.Sections = append(linker.Executable.Sections, target.Section)
 		linker.Executable.MappedSections[target.Section.Name] = target.Section
@@ -50,7 +50,6 @@ func (linker *Linker) mergeUnit(target *MergeUnit) error {
 		// update elf header
 		linker.Executable.Header.ShOff += target.Section.SectionEntry.ShSize
 		if target.Section.Name == ".shstrtab" || target.Section.Name == ".strtab" {
-			linker.Executable.Header.ShStrNdx = linker.Executable.Header.ShNum
 			linker.Executable.Header.ShOff -= target.Section.SectionEntry.ShSize
 			// this will be manually set at the end
 			target.Section.Data = []byte{}
@@ -70,7 +69,7 @@ func (linker *Linker) mergeUnit(target *MergeUnit) error {
 		}
 	}
 
-	linker.mergeSymbols(target, isNewSection)
+	linker.mergeSymbols(target, found)
 	return nil
 }
 
@@ -111,11 +110,10 @@ func (linker *Linker) updateRelocations(target *MergeUnit, offset uint64) {
 	refSection.Relocations = append(refSection.Relocations, target.Section.Relocations...)
 }
 
-// This is called right after we have merged all sections into one ex
+// This is called right after we have merged all sections into one ex and sorted the sections by permissions
 func (linker *Linker) UpdateMergedExecutable() error {
-
 	strtab := linker.Executable.MappedSections[".strtab"]
-	shstrtab := linker.Executable.Sections[linker.Executable.Header.ShStrNdx]
+	shstrtab := linker.Executable.MappedSections[".shstrtab"]
 	for idx, section := range linker.Executable.Sections {
 		// add current section to the section string table
 		section.SectionEntry.ShName = uint32(len(shstrtab.Data))
@@ -138,5 +136,35 @@ func (linker *Linker) UpdateMergedExecutable() error {
 		currentSectionOffset += section.SectionEntry.ShSize
 	}
 
+	return nil
+}
+
+// TODO: support -no-pic, currently only -fPIC and PIE are supported
+func (linker *Linker) ApplyRelocations() error {
+	for _, section := range linker.Executable.Sections {
+		for _, relocation := range section.Relocations {
+			A := relocation.Addend
+			S := linker.Symbols[relocation.SymbolName].DefinedSymbol.Symbol.BaseSymbol.StValue
+			P := section.SectionEntry.ShOff + relocation.Offset
+
+			// dummy
+			S += A + P
+
+			// section offset of the place where we need to write a symbol address
+			// relDest := relocation.Offset
+			// symbol address that we need to compute
+			// symAddr := 0
+
+			switch relocation.GetType() {
+			case elf.R_X86_64_NONE:
+				continue
+			case elf.R_X86_64_64:
+				log.Errorf("Relocation of absolute address is not supported!")
+				continue
+			case elf.R_X86_64_PC64:
+
+			}
+		}
+	}
 	return nil
 }
