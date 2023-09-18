@@ -92,6 +92,8 @@ func Link(inputs LinkerInputs) (*Linker, error) {
 
 	linker.fillExecutableHeader()
 
+	linker.ApplyRelocations()
+
 	err := linker.Executable.WriteELF()
 	if err != nil {
 		panic(err)
@@ -253,10 +255,24 @@ func (linker *Linker) fillExecutableHeader() {
 
 	linker.Executable.Header.PhOff = 0x40
 	linker.Executable.Header.PhEntSize = 0x38
+	linker.Executable.Header.Entry = linker.GetSectionVirtAddress(linker.Executable.MappedSections[".text"]) + 4
 
 	for idx, section := range linker.Executable.Sections {
 		if section.Name == ".shstrtab" {
 			linker.Executable.Header.ShStrNdx = uint16(idx)
 		}
 	}
+}
+
+func (linker *Linker) GetSectionVirtAddress(section *elf.Section) uint64 {
+	phdrNdx := 0
+	if section.SectionEntry.IsWritable() {
+		phdrNdx = 1
+	}
+
+	return section.SectionEntry.ShOff + linker.Executable.PhdrEntries[phdrNdx].Vaddr
+}
+
+func (linker *Linker) GetSymbolVirtAddress(symbol *elf.Symbol) uint64 {
+	return linker.GetSectionVirtAddress(linker.Executable.Sections[symbol.BaseSymbol.StShNdx]) + symbol.BaseSymbol.StValue
 }

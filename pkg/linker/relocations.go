@@ -1,8 +1,8 @@
 package linker
 
 import (
-	"errors"
-	"strings"
+	"encoding/binary"
+	"fmt"
 
 	"github.com/andreistan26/golink/pkg/elf"
 	"github.com/andreistan26/golink/pkg/helpers"
@@ -24,7 +24,7 @@ func (linker *Linker) MergeElf(target *elf.ELF64) error {
 	}
 
 	for _, section := range target.Sections {
-		if helpers.Find[string](mergeableNames, section.Name) != -1 || strings.Index(section.Name, ".rel") == 0 {
+		if helpers.Find[string](mergeableNames, section.Name) != -1 { //|| strings.Index(section.Name, ".rel") == 0 {
 			err := linker.mergeUnit(&MergeUnit{
 				Section:   section,
 				SourceELF: target,
@@ -43,12 +43,14 @@ func (linker *Linker) MergeElf(target *elf.ELF64) error {
 func (linker *Linker) mergeUnit(target *MergeUnit) error {
 	outputSection, found := linker.Executable.MappedSections[target.Section.Name]
 	if !found {
-		// update section header entry
+		// add newly found section entry to the executables section list and hashmap
 		linker.Executable.Sections = append(linker.Executable.Sections, target.Section)
 		linker.Executable.MappedSections[target.Section.Name] = target.Section
 
-		// update elf header
+		// update executable elf header size field
 		linker.Executable.Header.ShOff += target.Section.SectionEntry.ShSize
+
+		// delete content of string tables, will be rebuilt after
 		if target.Section.Name == ".shstrtab" || target.Section.Name == ".strtab" {
 			linker.Executable.Header.ShOff -= target.Section.SectionEntry.ShSize
 			// this will be manually set at the end
@@ -57,11 +59,11 @@ func (linker *Linker) mergeUnit(target *MergeUnit) error {
 		}
 		linker.Executable.Header.ShNum++
 
-		// This might free the memory of the symbols tho free and malloc instead of malloc!!!!
+		// This might free the memory of the symbols (free and malloc instead of malloc), we want the prior!
 		// if this fails then we need to make a new section entity for each section found that is not mapped
 		target.Section.Symbols = make([]*elf.Symbol, 0)
 	} else {
-		// copy data to target
+		// copy data from new section to same section in the executable
 		if target.Section.Name != ".shstrtab" && target.Section.Name != ".strtab" {
 			outputSection.Data = append(outputSection.Data, target.Section.Data...)
 			linker.updateRelocations(target, outputSection.SectionEntry.ShSize)
@@ -77,7 +79,6 @@ func (linker *Linker) mergeSymbols(target *MergeUnit, isFirstSection bool) {
 	destSection, ok := linker.Executable.MappedSections[target.Section.Name]
 	if !ok {
 		log.Errorf("This should not be possible, something very wrong")
-		panic(errors.New("WTF"))
 	}
 
 	// get all symbol definitions from this section
@@ -144,11 +145,9 @@ func (linker *Linker) ApplyRelocations() error {
 	for _, section := range linker.Executable.Sections {
 		for _, relocation := range section.Relocations {
 			A := relocation.Addend
-			S := linker.Symbols[relocation.SymbolName].DefinedSymbol.Symbol.BaseSymbol.StValue
-			P := section.SectionEntry.ShOff + relocation.Offset
-
-			// dummy
-			S += A + P
+			S := linker.GetSymbolVirtAddress(linker.Symbols[relocation.SymbolName].DefinedSymbol.Symbol)
+			P := linker.GetSectionVirtAddress(section) + relocation.Offset
+			fmt.Printf("Applied relocation at %x\n", relocation.Offset)
 
 			// section offset of the place where we need to write a symbol address
 			// relDest := relocation.Offset
@@ -159,10 +158,20 @@ func (linker *Linker) ApplyRelocations() error {
 			case elf.R_X86_64_NONE:
 				continue
 			case elf.R_X86_64_64:
-				log.Errorf("Relocation of absolute address is not supported!")
+				V := S + A
+				binary.LittleEndian.PutUint64(section.Data[relocation.Offset:], uint64(V))
 				continue
 			case elf.R_X86_64_PC64:
-
+				V := S + A - P
+				binary.LittleEndian.PutUint64(section.Data[relocation.Offset:], uint64(V))
+				break
+			case elf.R_X86_64_PC32:
+				V := S + A - P
+				binary.LittleEndian.PutUint32(section.Data[relocation.Offset:], uint32(V))
+				break
+			case elf.R_X86_64_REX_GOTP:
+			case elf.R_X86_64_GOTPCREL:
+				//TODO
 			}
 		}
 	}
