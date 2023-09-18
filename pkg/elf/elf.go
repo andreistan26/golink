@@ -722,7 +722,8 @@ func (shdr *ELF64Shdr) Serialize() []byte {
 }
 
 func (elf *ELF64) WriteELF() error {
-	file, err := os.OpenFile(elf.Filename, os.O_WRONLY|os.O_TRUNC, os.FileMode(int(0777)))
+	// clear the file if it exists
+	file, err := os.OpenFile(elf.Filename, os.O_WRONLY|os.O_TRUNC|os.O_CREATE, os.FileMode(int(0777)))
 	file, err = os.OpenFile(elf.Filename, os.O_APPEND|os.O_EXCL|os.O_RDWR, os.FileMode(int(0777)))
 	if err != nil {
 		return err
