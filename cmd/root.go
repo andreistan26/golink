@@ -55,22 +55,25 @@ func RootCmd() *cobra.Command {
 
 	rootCmd.PersistentFlags().BoolVarP(&opts.Profile, "profile", "p", false, "enable profiling")
 	rootCmd.PersistentFlags().BoolVarP(&opts.Debug, "debug", "d", false, "enable debugging")
-
 	rootCmd.AddCommand(linkerCmd())
 
 	return rootCmd
 }
 
 func linkerCmd() *cobra.Command {
+	opts := linker.LinkerInputs{}
 	linkerCmd := &cobra.Command{
 		Use:   "link",
 		Short: "Link input files",
 		Args:  cobra.MinimumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			linker.Link(linker.LinkerInputs{Filenames: args[:]})
+			opts.Filenames = args[:]
+			linker.Link(opts)
 			return nil
 		},
 	}
+
+	//rootCmd.PersistentFlags()
 
 	return linkerCmd
 }

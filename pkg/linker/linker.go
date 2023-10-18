@@ -15,8 +15,9 @@ const (
 )
 
 type LinkerInputs struct {
-	Filenames      []string
-	ExecutableName string
+	Filenames        []string
+	ExecutableName   string
+	DynamicLibraries []string
 }
 
 type ConnectedSymbol struct {
@@ -225,8 +226,8 @@ func (linker *Linker) fillProgramHeader() {
 		Type:   elf.PT_LOAD,
 		Flags:  elf.PF_R | elf.PF_W,
 		Offset: linker.Executable.Sections[writableNdx].SectionEntry.ShOff,
-		Vaddr:  0x400000 + linker.Executable.Sections[writableNdx].SectionEntry.ShOff,
-		Paddr:  0x400000 + linker.Executable.Sections[writableNdx].SectionEntry.ShOff,
+		Vaddr:  0x401000 + linker.Executable.Sections[writableNdx].SectionEntry.ShOff,
+		Paddr:  0x401000 + linker.Executable.Sections[writableNdx].SectionEntry.ShOff,
 		FileSz: uint64(rwSegSize),
 		MemSz:  uint64(rwSegSize),
 		Align:  0x1000, // change pls
@@ -255,7 +256,7 @@ func (linker *Linker) fillExecutableHeader() {
 
 	linker.Executable.Header.PhOff = 0x40
 	linker.Executable.Header.PhEntSize = 0x38
-	linker.Executable.Header.Entry = linker.GetSectionVirtAddress(linker.Executable.MappedSections[".text"]) + 4
+	linker.Executable.Header.Entry = linker.GetSectionVirtAddress(linker.Executable.MappedSections[".text"])
 
 	for idx, section := range linker.Executable.Sections {
 		if section.Name == ".shstrtab" {

@@ -169,8 +169,8 @@ func (linker *Linker) ApplyRelocations() error {
 				V := S + A - P
 				binary.LittleEndian.PutUint32(section.Data[relocation.Offset:], uint32(V))
 				break
-			case elf.R_X86_64_REX_GOTP:
-			case elf.R_X86_64_GOTPCREL:
+				//case elf.R_X86_64_REX_GOTP:
+				//case elf.R_X86_64_GOTPCREL:
 				//TODO
 			}
 		}
