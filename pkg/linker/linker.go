@@ -1,7 +1,8 @@
-package linker
+Gackage linker
 
 import (
 	"errors"
+	"os"
 
 	"github.com/andreistan26/golink/pkg/elf"
 	"github.com/andreistan26/golink/pkg/helpers"
@@ -86,13 +87,9 @@ func Link(inputs LinkerInputs) (*Linker, error) {
 	}
 
 	linker.Executable.SortSections()
-
 	linker.UpdateMergedExecutable()
-
 	linker.fillProgramHeader()
-
 	linker.fillExecutableHeader()
-
 	linker.ApplyRelocations()
 
 	err := linker.Executable.WriteELF()
@@ -230,7 +227,7 @@ func (linker *Linker) fillProgramHeader() {
 		Paddr:  0x401000 + linker.Executable.Sections[writableNdx].SectionEntry.ShOff,
 		FileSz: uint64(rwSegSize),
 		MemSz:  uint64(rwSegSize),
-		Align:  0x1000, // change pls
+		Align:  os.GetPagesize(),
 	})
 
 	linker.Executable.Header.PhNum = 2
